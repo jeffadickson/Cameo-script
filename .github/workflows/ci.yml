@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install .NET 11 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "11.0.x"
+          dotnet-quality: preview
+
+      - name: Build
+        run: dotnet build Cameo.slnx -c Release
+
+      - name: Test
+        run: dotnet test Cameo.slnx -c Release --no-build --verbosity normal
+
+      - name: Cameo examples
+        run: bash examples/run.sh
+
+      - name: Cameo.Embed static C++20 VM
+        run: bash embed/cameo_embed/run.sh
+
+      - name: VS Code extension
+        run: node editors/vscode/test.js src/Cameo.Cli/bin/Release/net11.0/cameo

@@ -1,0 +1,15 @@
+let ready = Future.completedFuture("ready")
+print($"success: {ready.get()}")
+
+let cancelled: Future<string> = Future.new()
+assert(cancelled.cancel())
+let _, cancellation = cancelled.await()
+print($"explicit cancellation: {cancellation.kind}")
+
+-- The timeout is in seconds. This caller owns the source and can cancel it.
+let source: Future<string> = Future.new()
+let _, deadline = source.await(timeout: 0.001, cancelOnTimeout: true)
+print($"deadline: {deadline.kind}")
+
+let _, stopped = source.await()
+print($"source cleanup: {stopped.kind}")

@@ -1,0 +1,13 @@
+-- Produce a reviewable plan. This example never moves a user's files.
+let root = arg[1] or "examples/fixtures"
+let names, issue = aio.listDir(root .. "/inbox").await()
+if issue {
+    io.stderr.write(issue.kind .. ": " .. issue.message .. "\n")
+    os.exit(2)
+}
+let plan = Query.from(names)
+    .where((name) => name.match("%.log$") != nil)
+    .orderBy((name) => name)
+    .select((name) => $"{name} -> archive/{name}")
+    .toList()
+for _, line in ipairs(plan) { print(line) }

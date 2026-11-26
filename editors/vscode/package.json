@@ -1,0 +1,27 @@
+{
+  "name": "cameo-lang",
+  "displayName": "Cameo",
+  "description": "Cameo syntax highlighting and save-time static diagnostics.",
+  "version": "0.1.0",
+  "publisher": "jeffadickson",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:cameo"],
+  "contributes": {
+    "languages": [
+      { "id": "cameo", "aliases": ["Cameo", "cameo"], "extensions": [".cameo"], "configuration": "./language-configuration.json" }
+    ],
+    "grammars": [
+      { "language": "cameo", "scopeName": "source.cameo", "path": "./syntaxes/cameo.tmLanguage.json" }
+    ],
+    "configuration": {
+      "title": "Cameo",
+      "properties": {
+        "cameo.path": { "type": "string", "default": "cameo", "scope": "machine", "description": "Path to the cameo executable." },
+        "cameo.checkOnSave": { "type": "boolean", "default": true, "description": "Type-check Cameo files when they are opened or saved." }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+-- Records describe validated application data; table literals still construct values.
+record Stock {
+    name: string
+    count: integer
+}
+
+fn classify(count: integer) -> string {
+    if count == 0 {
+        return "empty"
+    } else if count < 3 {
+        return "low"
+    } else {
+        return "ready"
+    }
+}
+
+fn report(items: {Stock}) -> integer {
+    var total = 0
+    for _, item in ipairs(items) {
+        total += item.count
+        print($"{item.name}: {classify(item.count)}")
+    }
+    return total
+}
+
+let stock: {Stock} = {
+    {name = "bolts", count = 8},
+    {name = "nuts", count = 2},
+    {name = "washers", count = 0}
+}
+print($"total: {report(stock)}")

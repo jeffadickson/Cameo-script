@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Cameo.Runtime</RootNamespace>
+    <TieredPGO>true</TieredPGO>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Types/prelude/*.d.tl" />
+    <InternalsVisibleTo Include="Cameo.Language" />
+    <InternalsVisibleTo Include="cameo" />
+    <InternalsVisibleTo Include="Cameo.Embed" />
+    <InternalsVisibleTo Include="Cameo.Jit" />
+    <InternalsVisibleTo Include="Cameo.Fst" />
+    <InternalsVisibleTo Include="Cameo.Hdf5" />
+    <InternalsVisibleTo Include="Cameo.Units" />
+    <InternalsVisibleTo Include="Cameo.SafeNumerics" />
+    <InternalsVisibleTo Include="Cameo.Tests" />
+  </ItemGroup>
+</Project>

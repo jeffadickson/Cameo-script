@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+.vs/
+.claude/
+StrykerOutput/
+publish/
+docs/requirements/_output/
+docs/requirements/__pycache__/
+artifacts/
+target/
+embed/cameo_embed/build/
+

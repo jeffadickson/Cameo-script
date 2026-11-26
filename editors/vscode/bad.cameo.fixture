@@ -1,0 +1,2 @@
+let prefix = "é😀"; let count: integer = "wrong"
+print(prefix, count)

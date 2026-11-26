@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><AssemblyName>cameo</AssemblyName>
+    <TargetFramework>net11.0</TargetFramework><LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Cameo/Cameo.csproj" /></ItemGroup>
+</Project>

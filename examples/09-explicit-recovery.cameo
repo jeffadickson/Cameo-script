@@ -1,0 +1,36 @@
+-- Expected failures use the actual typed JSON and Future error records.
+fn decodeOrFallback(source: string) -> any {
+    let value, issue = json.decode(source)
+    if issue != nil {
+        print($"json recovery: {issue.kind}")
+        return {name = "guest"}
+    }
+    return value
+}
+
+let profile = decodeOrFallback("{")
+print($"profile: {profile.name}")
+let failed: Future<integer> = Future.failedFuture("offline fixture")
+let value, issue = failed.await()
+if issue != nil {
+    print($"future recovery: {issue.kind}")
+} else {
+    print($"unexpected value: {value}")
+}
+
+-- In a general value/error pair, even false is an error: test against nil.
+fn falseIssue() -> integer, any {
+    return 0, false
+}
+let _, generalIssue = falseIssue()
+if generalIssue != nil {
+    print("false error: detected")
+}
+fn recover(failure: FutureError) -> integer {
+    if failure.kind == "failed" {
+        return 42
+    }
+    error(failure, 0)
+}
+let recovered = failed.exceptionally(recover).get()
+print($"fallback: {recovered}")

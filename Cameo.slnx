@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cameo.Runtime/Cameo.Runtime.csproj" />
+    <Project Path="src/Cameo/Cameo.csproj" />
+    <Project Path="src/Cameo.Embed/Cameo.Embed.csproj" />
+    <Project Path="src/Cameo.Cli/Cameo.Cli.csproj" />
+    <Project Path="src/Cameo.Jit/Cameo.Jit.csproj" />
+    <Project Path="src/Cameo.Fst/Cameo.Fst.csproj" />
+    <Project Path="src/Cameo.Hdf5/Cameo.Hdf5.csproj" />
+    <Project Path="src/Cameo.Units/Cameo.Units.csproj" />
+    <Project Path="src/Cameo.SafeNumerics/Cameo.SafeNumerics.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/host/CameoHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cameo.Tests/Cameo.Tests.csproj" />
+  </Folder>
+</Solution>

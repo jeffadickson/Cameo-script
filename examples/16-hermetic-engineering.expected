@@ -1,0 +1,10 @@
+bom frozen: true
+rail VDD_CORE: 20 W
+rail VDD_IO: 13.2 W
+rail FAN_AUX: 9 W
+critical rails: VDD_CORE(P0-critical), VDD_IO(P1-interface)
+bom subtotal: $107.30, with 8.25% tax: $116.152250
+24h energy (parallel.map): 1728.00 kJ, 1140.48 kJ, 777.60 kJ
+thermal rise: 60 K (junction 185.0 °F)
+manifold absolute: 3.51325 bar, core rail rms: 1.2500 V
+inventory + spares: [5,8,3], errors=["none","none","none"], derate=0.75 (none), 4/5 exact=inexact

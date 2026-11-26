@@ -1,0 +1,23 @@
+fn parsePort(text: string) -> Result<integer, string> {
+    if not regex.test(text, [[^[0-9]{1,5}$]]) {
+        return err("expected a decimal port")
+    }
+    let port = math.tointeger(tonumber(text))
+    if port < 1 or port > 65535 {
+        return err("port is outside 1..65535")
+    }
+    return ok(port)
+}
+
+fn showPort(text: string) {
+    let result = parsePort(text)
+    if result.isOk() {
+        print($"port: {result.value()}")
+    } else {
+        print($"invalid port: {result.issue()}")
+    }
+}
+
+showPort("443")
+showPort("invalid")
+showPort("65536")

@@ -1,0 +1,17 @@
+fn finishReport(job: Future<string>, cached: string) -> Result<string, FutureError> {
+    let report = try Result.fromPair(job.await(timeout: 0, cancelOnTimeout: true))
+        catch timeout { cached }
+    return ok(report)
+}
+
+let ready = finishReport(Future.completedFuture("live report"), "cached report")
+print(ready.value())
+
+let slow: Future<string> = Future.new()
+let recovered = finishReport(slow, "cached report")
+print(recovered.value())
+
+let cancelled: Future<string> = Future.new()
+assert(cancelled.cancel())
+let stopped = finishReport(cancelled, "cached report")
+print(stopped.issue().kind)

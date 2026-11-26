@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.1.0" PrivateAssets="all" />
+    <PackageReference Include="CsCheck" Version="5.0.1" />
+    <PackageReference Include="Hedgehog" Version="2.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Cameo.Runtime/Cameo.Runtime.csproj" />
+    <ProjectReference Include="../../src/Cameo/Cameo.csproj" />
+    <ProjectReference Include="../../src/Cameo.Cli/Cameo.Cli.csproj" />
+    <ProjectReference Include="../../src/Cameo.Embed/Cameo.Embed.csproj" />
+    <ProjectReference Include="../../examples/host/CameoHost.csproj" />
+    <ProjectReference Include="../../src/Cameo.Hdf5/Cameo.Hdf5.csproj" />
+    <ProjectReference Include="../../src/Cameo.Fst/Cameo.Fst.csproj" />
+    <ProjectReference Include="../../src/Cameo.Jit/Cameo.Jit.csproj" />
+    <ProjectReference Include="../../src/Cameo.Units/Cameo.Units.csproj" />
+    <ProjectReference Include="../../src/Cameo.SafeNumerics/Cameo.SafeNumerics.csproj" />
+  </ItemGroup>
+</Project>

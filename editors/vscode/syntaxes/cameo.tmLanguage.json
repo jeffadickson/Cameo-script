@@ -1,0 +1,114 @@
+{
+  "name": "Cameo",
+  "scopeName": "source.cameo",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#interpolated" },
+    { "include": "#strings" },
+    { "include": "#regex" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.block.cameo", "begin": "--\\[(=*)\\[", "end": "\\]\\1\\]" },
+        { "name": "comment.line.double-dash.cameo", "match": "--.*$" }
+      ]
+    },
+    "interpolated": {
+      "patterns": [
+        {
+          "name": "string.interpolated.cameo", "begin": "\\$\"", "end": "\"",
+          "patterns": [{ "include": "#escapes" }, { "include": "#braces" }]
+        },
+        {
+          "name": "string.interpolated.cameo", "begin": "\\$'", "end": "'",
+          "patterns": [{ "include": "#escapes" }, { "include": "#braces" }]
+        },
+        {
+          "name": "string.interpolated.multiline.cameo", "begin": "\\$\\[(=*)\\[", "end": "\\]\\1\\]",
+          "patterns": [{ "include": "#braces" }]
+        }
+      ]
+    },
+    "braces": {
+      "patterns": [
+        { "name": "constant.character.escape.cameo", "match": "\\{\\{|\\}\\}" },
+        {
+          "begin": "\\{", "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.cameo" } },
+          "endCaptures": { "0": { "name": "punctuation.section.embedded.end.cameo" } },
+          "contentName": "meta.embedded.cameo",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.double.cameo", "begin": "\"", "end": "\"|$", "patterns": [{ "include": "#escapes" }] },
+        { "name": "string.quoted.single.cameo", "begin": "'", "end": "'|$", "patterns": [{ "include": "#escapes" }] },
+        { "name": "string.quoted.other.multiline.cameo", "begin": "\\[(=*)\\[", "end": "\\]\\1\\]" }
+      ]
+    },
+    "regex": {
+      "patterns": [
+        {
+          "match": "(=~|!~)(\\s*)(/(?:\\\\.|[^/\\\\\\n])+/[imsx]*)",
+          "captures": {
+            "1": { "name": "keyword.operator.cameo" },
+            "3": { "name": "string.regexp.cameo" }
+          }
+        }
+      ]
+    },
+    "escapes": {
+      "name": "constant.character.escape.cameo",
+      "match": "\\\\(?:[abfnrtvz\\\\\"'\\n]|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]+\\}|\\d{1,3})"
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.hex.cameo", "match": "\\b0[xX][0-9A-Fa-f]*(?:\\.[0-9A-Fa-f]*)?(?:[pP][+-]?\\d+)?\\b" },
+        { "name": "constant.numeric.cameo", "match": "\\b\\d+(?:\\.\\d*)?(?:[eE][+-]?\\d+)?\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.cameo", "match": "\\b(?:if|then|else|elseif|end|for|in|do|while|repeat|until|return|break|continue|goto|match|try|catch|using|import|export|from)\\b" },
+        { "name": "keyword.declaration.cameo", "match": "\\b(?:fn|let|var|local|global|function|record|interface|enum|type|implements|extends|static|where|is|as|require)\\b" },
+        { "name": "keyword.operator.logical.cameo", "match": "\\b(?:and|or|not)\\b" },
+        { "name": "constant.language.cameo", "match": "\\b(?:nil|true|false)\\b" },
+        { "name": "variable.language.self.cameo", "match": "\\bself\\b" },
+        { "name": "storage.modifier.cameo", "match": "<\\s*(?:const|close|total)\\s*>" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "support.type.primitive.cameo", "match": "\\b(?:any|boolean|integer|number|string|thread|userdata|metatable)\\b" },
+        { "name": "support.type.builtin.cameo", "match": "\\b(?:List|Dict|Result|Future|Query|FloatArray|Rng|FstWriter|Regex|Stream|Sink|Process|Watcher|HttpSession|Connection|SharpUnits|SymbolicUnit|Quantity|QuantityPoint|QuantitySeries|Fixed64|Decimal64|Decimal128)\\b" },
+        { "name": "entity.name.type.cameo", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "match": "\\b(fn|function)\\s+([A-Za-z_][\\w.:]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.cameo" },
+            "2": { "name": "entity.name.function.cameo" }
+          }
+        },
+        { "name": "support.function.cameo", "match": "\\b(?:print|assert|error|pcall|xpcall|ipairs|pairs|next|select|tostring|tonumber|type|ok|err|unwrap|freeze|isFrozen|instanceof|setmetatable|getmetatable|rawget|rawset|rawequal|rawlen)\\b(?=\\s*[({\"'])" },
+        { "name": "support.variable.module.cameo", "match": "\\b(?:units|safenum|parallel|hdf5|fst|json|csv|fs|path|re|math|table|crypto|db|net|os|time|sandbox|jit)\\b(?=\\s*\\.)" },
+        { "name": "entity.name.function.call.cameo", "match": "\\b[a-z_]\\w*(?=\\s*[({\"'])" }
+      ]
+    },
+    "operators": {
+      "name": "keyword.operator.cameo",
+      "match": "=>|->|\\|>|\\?\\?|\\?\\.|=~|!~|!=|\\.\\.=|//=|<<=|>>=|[-+*/%^&|]=|\\.\\.\\.|\\.\\.|==|~=|<=|>=|<<|>>|//|[-+*/%^#&|~<>=?]"
+    }
+  }
+}

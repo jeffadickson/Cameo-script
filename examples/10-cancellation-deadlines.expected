@@ -1,0 +1,4 @@
+success: ready
+explicit cancellation: cancelled
+deadline: timeout
+source cleanup: cancelled

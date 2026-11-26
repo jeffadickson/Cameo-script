@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cameo.Tests" />
+    <ProjectReference Include="../Cameo.Runtime/Cameo.Runtime.csproj" />
+    <ProjectReference Include="../../external/SharpUnits/src/SharpUnits.Interop/SharpUnits.Interop.csproj" />
+  </ItemGroup>
+</Project>

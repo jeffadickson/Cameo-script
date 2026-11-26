@@ -1,0 +1,6 @@
+[submodule "external/SharpUnits"]
+	path = external/SharpUnits
+	url = https://github.com/jeffadickson/SharpUnits.git
+[submodule "external/SharpSafeNumerics"]
+	path = external/SharpSafeNumerics
+	url = https://github.com/jeffadickson/SharpSafeNumerics.git

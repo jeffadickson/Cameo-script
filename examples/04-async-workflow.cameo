@@ -1,0 +1,17 @@
+-- Existing futures compose asynchronous work; this is not structured task ownership.
+let pending = {
+    Future.delay(0.001, 10),
+    Future.delay(0.001, 20),
+    Future.delay(0.001, 30)
+}
+let values = Future.allOf(pending).get()
+let total = Query.from(values)
+    .sum((value) => value)
+let worker = Future.parallel((value: integer) => value * value, 7).get()
+let cancelled = Future.delay(0.001)
+cancelled.cancel()
+-- Cancellation is expected here, so inspect the railway result instead of raising it.
+let _, cancellation = cancelled.await()
+print($"total: {total}")
+print($"worker: {worker}")
+print($"cancelled: {cancellation.kind}")

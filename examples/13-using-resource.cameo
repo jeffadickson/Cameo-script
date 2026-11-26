@@ -1,0 +1,15 @@
+fn readReport() -> Result<string, string> {
+    return err("report is unavailable")
+}
+
+fn loadReport(file: FILE) -> Result<string, string> {
+    using resource: FILE = file
+    print(io.type(resource))
+    let report = try readReport()
+    return ok(report)
+}
+
+let file = io.tmpfile()
+let result = loadReport(file)
+print(result.issue())
+print(io.type(file))

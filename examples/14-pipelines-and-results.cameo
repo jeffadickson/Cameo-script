@@ -1,0 +1,40 @@
+-- Unified dot calls, pipelines (|>), !=, catch-all recovery, and parallel Result transfer.
+fn parsePort(text: string) -> Result<integer, string> {
+    let cleaned = text.trim()
+    if not cleaned.retest("^[0-9]{1,5}$") {
+        return err("not a port: " .. cleaned)
+    }
+    let port = math.tointeger(tonumber(cleaned))
+    if port == nil or port < 1 or port > 65535 {
+        return err("out of range: " .. cleaned)
+    }
+    return ok(port)
+}
+
+fn summarize(raw: string) -> string {
+    let label = try parsePort(raw).map((p) => $"port {p}")
+        catch (reason) { $"invalid ({reason})" }
+    return label
+}
+
+let rawInputs = { " 443 ", "8080", "bad", "70000" }
+let validPorts = Query.from(rawInputs)
+    .select((s) => parsePort(s))
+    .where((r) => r.isOk())
+    .select((r) => r.value())
+    .toList()
+
+let banner = "  active ports  "
+    |> string.trim
+    |> string.upper
+
+print($"{banner}: {table.concat(validPorts, ', ')}")
+for _, item in ipairs(rawInputs) {
+    let summary = summarize(item)
+    if summary != "" {
+        print($"  {item.trim()} -> {summary}")
+    }
+}
+
+let remote = Future.parallel(parsePort, " 22 ").get()
+print($"worker: {remote.unwrapOr(0)}")

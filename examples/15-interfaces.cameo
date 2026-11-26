@@ -1,0 +1,66 @@
+-- Cameo interfaces: braced `interface` declarations, inline `fn` record methods,
+-- explicit `implements` verification, structural satisfaction (records and plain
+-- tables), and unified `.` method dispatch.
+
+interface Greeter {
+    fn greet(name: string) -> string
+}
+
+interface Named {
+    name: string
+    fn label() -> string
+}
+
+interface LoudGreeter extends Greeter, Named {
+    fn shout(name: string) -> string
+}
+
+record Bot implements LoudGreeter {
+    name: string
+    prefix: string
+
+    fn greet(name: string) -> string {
+        return $"{self.prefix}, {name}!"
+    }
+
+    fn label() -> string {
+        return $"Bot({self.name})"
+    }
+
+    fn shout(name: string) -> string {
+        return self.greet(name).upper()
+    }
+
+    static fn create(name: string, prefix: string) -> Bot {
+        return { name = name, prefix = prefix }
+    }
+}
+
+-- No `implements` clause: Human satisfies Greeter structurally.
+record Human {
+    first: string
+
+    fn greet(name: string) -> string {
+        return $"Hi {name}, I'm {self.first}"
+    }
+}
+
+fn announce(g: Greeter, who: string) {
+    print(g.greet(who))
+}
+
+let r2: Bot = { name = "R2", prefix = "Beep" }
+let bb8 = Bot.create("BB8", "Bloop")
+let ada = Human { first = "Ada" }
+let custom: Greeter = {
+    greet = (who) => $"Welcome, {who}!"
+}
+
+let greeters: {Greeter} = { r2, bb8, ada, custom }
+for _, g in ipairs(greeters) {
+    announce(g, "Grace")
+}
+
+let loud: LoudGreeter = r2
+print($"loud: {loud.label()} -> {loud.shout('Luke')}")
+print($"runtime is Bot: r2={r2 is Bot}, ada={ada is Bot}")
