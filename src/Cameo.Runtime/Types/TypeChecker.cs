@@ -104,18 +104,90 @@ public sealed partial class TypeChecker
     private RecordType? _stringLib;
     private RecordType? _metatableRec;
     private FuncType? _strMatch, _strFind, _strGmatch, _strUnpack, _strFormat;
+    private RecordType? _sharpUnitsLib;
+    private RecordType? _quantityDefinition, _symbolicUnitDefinition, _quantitySeriesDefinition;
+    private FuncType? _unitsQty, _unitsParse, _unitsUnit;
+    private PolyType? _unitsSeries;
+    private FuncType? _qtyInUnit, _qtyToSi, _qtyIsEquivalent;
+    private FuncType? _unitPow, _unitRoot, _unitToSi;
+    private FuncType? _seriesInUnit, _seriesAutoScale, _seriesRelativeTo;
+    private FuncType? _seriesMin, _seriesMax, _seriesMean, _seriesRms, _seriesPeakToPeak, _seriesAt;
+    private IUnitDimensionResolver? _unitResolver;
 
     private readonly bool _cameoMode;
     private readonly HashSet<(RecordType, RecordType)> _structuralPairs = new();
 
-    public TypeChecker(Func<string, ModuleSource?>? moduleFinder = null) : this(moduleFinder, false) { }
+    public TypeChecker(Func<string, ModuleSource?>? moduleFinder = null) : this(moduleFinder, false, null) { }
 
-    internal TypeChecker(Func<string, ModuleSource?>? moduleFinder, bool taggedResults)
+    internal TypeChecker(Func<string, ModuleSource?>? moduleFinder, bool taggedResults, IUnitDimensionResolver? unitResolver = null)
     {
         _finder = moduleFinder;
         _cameoMode = taggedResults;
+        _unitResolver = unitResolver;
         _scope = _globals;
         LoadPrelude(taggedResults);
+    }
+
+    internal void SetUnitDimensionResolver(IUnitDimensionResolver? resolver) => _unitResolver = resolver;
+
+    private bool TryResolveUnitDimension(string unitExpression, out PhysicalDimension? dimension, out string? error)
+    {
+        if (_unitResolver != null)
+            return _unitResolver.TryResolveUnitDimension(unitExpression, out dimension, out error);
+        if (PhysicalDimension.TryParseBuiltin(unitExpression, out PhysicalDimension builtin))
+        {
+            dimension = builtin;
+            error = null;
+            return true;
+        }
+        dimension = null;
+        error = $"unknown unit expression '{unitExpression}'";
+        return false;
+    }
+
+    private bool TryResolveQuantityLiteralDimension(string literal, out PhysicalDimension? dimension, out string? error)
+    {
+        if (_unitResolver != null)
+            return _unitResolver.TryResolveQuantityLiteralDimension(literal, out dimension, out error);
+        // Minimal fallback when no SharpUnits resolver is attached: strip leading numeric prefix.
+        int i = 0;
+        string trimmed = literal.Trim();
+        if (i < trimmed.Length && (trimmed[i] == '+' || trimmed[i] == '-')) i++;
+        while (i < trimmed.Length && (char.IsAsciiDigit(trimmed[i]) || trimmed[i] == '.' || trimmed[i] == '_')) i++;
+        if (i < trimmed.Length && (trimmed[i] == 'e' || trimmed[i] == 'E'))
+        {
+            int j = i + 1;
+            if (j < trimmed.Length && (trimmed[j] == '+' || trimmed[j] == '-')) j++;
+            if (j < trimmed.Length && char.IsAsciiDigit(trimmed[j]))
+            {
+                i = j;
+                while (i < trimmed.Length && char.IsAsciiDigit(trimmed[i])) i++;
+            }
+        }
+        string unitPart = trimmed[i..].Trim();
+        if (unitPart.Length > 0 && PhysicalDimension.TryParseBuiltin(unitPart, out PhysicalDimension builtin))
+        {
+            dimension = builtin;
+            error = null;
+            return true;
+        }
+        dimension = null;
+        error = $"unknown quantity literal '{literal}'";
+        return false;
+    }
+
+    private bool IsDimensionableUnitsRecord(TType t)
+    {
+        if (t is not RecordType rec) return false;
+        if (ReferenceEquals(rec, _quantityDefinition) ||
+            ReferenceEquals(rec, _symbolicUnitDefinition) ||
+            ReferenceEquals(rec, _quantitySeriesDefinition))
+            return true;
+        if (_quantityDefinition == null && rec.Name is "SharpUnits.Quantity" or "SharpUnits.SymbolicUnit" or "SharpUnits.QuantitySeries")
+        {
+            return rec.IsUserdata;
+        }
+        return false;
     }
 
     /// <summary>Errors found while loading the built-in prelude (expected to be empty).</summary>
@@ -173,6 +245,42 @@ public sealed partial class TypeChecker
             _strGmatch = LookupField(_stringLib, "gmatch") as FuncType;
             _strUnpack = LookupField(_stringLib, "unpack") as FuncType;
             _strFormat = LookupField(_stringLib, "format") as FuncType;
+        }
+        _sharpUnitsLib = _globals.Lookup("SharpUnits")?.TypeDef as RecordType;
+        if (_sharpUnitsLib != null)
+        {
+            EnsureFilled(_sharpUnitsLib);
+            _quantityDefinition = _sharpUnitsLib.Nested.GetValueOrDefault("Quantity") as RecordType;
+            _symbolicUnitDefinition = _sharpUnitsLib.Nested.GetValueOrDefault("SymbolicUnit") as RecordType;
+            _quantitySeriesDefinition = _sharpUnitsLib.Nested.GetValueOrDefault("QuantitySeries") as RecordType;
+            _unitsQty = LookupField(_sharpUnitsLib, "qty") as FuncType;
+            _unitsParse = LookupField(_sharpUnitsLib, "parse") as FuncType;
+            _unitsUnit = LookupField(_sharpUnitsLib, "unit") as FuncType;
+            _unitsSeries = LookupField(_sharpUnitsLib, "series") as PolyType;
+            if (_quantityDefinition != null)
+            {
+                _qtyInUnit = LookupField(_quantityDefinition, "in_unit") as FuncType;
+                _qtyToSi = LookupField(_quantityDefinition, "to_si") as FuncType;
+                _qtyIsEquivalent = LookupField(_quantityDefinition, "is_equivalent") as FuncType;
+            }
+            if (_symbolicUnitDefinition != null)
+            {
+                _unitPow = LookupField(_symbolicUnitDefinition, "pow") as FuncType;
+                _unitRoot = LookupField(_symbolicUnitDefinition, "root") as FuncType;
+                _unitToSi = LookupField(_symbolicUnitDefinition, "to_si") as FuncType;
+            }
+            if (_quantitySeriesDefinition != null)
+            {
+                _seriesInUnit = LookupField(_quantitySeriesDefinition, "in_unit") as FuncType;
+                _seriesAutoScale = LookupField(_quantitySeriesDefinition, "auto_scale") as FuncType;
+                _seriesRelativeTo = LookupField(_quantitySeriesDefinition, "relative_to") as FuncType;
+                _seriesMin = LookupField(_quantitySeriesDefinition, "min") as FuncType;
+                _seriesMax = LookupField(_quantitySeriesDefinition, "max") as FuncType;
+                _seriesMean = LookupField(_quantitySeriesDefinition, "mean") as FuncType;
+                _seriesRms = LookupField(_quantitySeriesDefinition, "rms") as FuncType;
+                _seriesPeakToPeak = LookupField(_quantitySeriesDefinition, "peak_to_peak") as FuncType;
+                _seriesAt = LookupField(_quantitySeriesDefinition, "at") as FuncType;
+            }
         }
         _metatableRec = _globals.Lookup("metatable")?.TypeDef as RecordType;
     }
@@ -460,7 +568,7 @@ public sealed partial class TypeChecker
 
     private static string Disp(TType t) => t.Show();
 
-    private static bool IsNominal(TType t) => t is RecordType { IsAnonymous: false } || t is InstType || t is EnumType;
+    private static bool IsNominal(TType t) => t is RecordType { IsAnonymous: false } || t is InstType || t is QuantityType || t is EnumType;
 
     /// <summary>The "got X, expected Y" part of a type mismatch message, worded as tl does.</summary>
     private static string Mismatch(TType from, TType to)
@@ -582,6 +690,24 @@ public sealed partial class TypeChecker
         }
         // integer is absorbed by number
         if (list.Any(x => IsPrim(x, Prim.Number))) list.RemoveAll(x => IsPrim(x, Prim.Integer));
+        // Distinctly dimensioned quantities of the same base record widen to the untagged base record.
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (list[i] is QuantityType qi)
+            {
+                bool hasOtherOfSameDef = list.Any(x => !ReferenceEquals(x, qi)
+                    && ((x is QuantityType qx && ReferenceEquals(qx.Def, qi.Def))
+                        || (x is RecordType rx && ReferenceEquals(rx, qi.Def))));
+                if (hasOtherOfSameDef)
+                {
+                    RecordType baseDef = qi.Def;
+                    list.RemoveAll(x => (x is QuantityType qx && ReferenceEquals(qx.Def, baseDef))
+                        || (x is RecordType rx && ReferenceEquals(rx, baseDef)));
+                    list.Add(baseDef);
+                    i = -1;
+                }
+            }
+        }
         if (list.Count == 0) return PrimType.Nil;
         return list.Count == 1 ? list[0] : new UnionType(list);
     }
@@ -599,6 +725,8 @@ public sealed partial class TypeChecker
                 return b is TupleType tb && ta.Elems.Count == tb.Elems.Count && ta.Elems.Zip(tb.Elems).All(p => Same(p.First, p.Second));
             case InstType ia:
                 return b is InstType ib && ia.Def == ib.Def && ia.Args.Count == ib.Args.Count && ia.Args.Zip(ib.Args).All(p => Same(p.First, p.Second));
+            case QuantityType qa:
+                return b is QuantityType qb && ReferenceEquals(qa.Def, qb.Def) && qa.Dimension == qb.Dimension;
             case UnionType ua:
                 return b is UnionType ub && ua.Members.Count == ub.Members.Count && ua.Members.All(m => ub.Members.Any(n => Same(m, n)));
             case FuncType fa:
@@ -613,7 +741,7 @@ public sealed partial class TypeChecker
 
     private static bool IsTableLike(TType t) => t switch
     {
-        ArrayType or TupleType or MapType or RecordType or InstType or EmptyTableType => true,
+        ArrayType or TupleType or MapType or RecordType or InstType or QuantityType or EmptyTableType => true,
         UnionType u => u.Members.Any(IsTableLike),
         TypeVar => true,
         _ => false,
@@ -719,6 +847,12 @@ public sealed partial class TypeChecker
                 for (int k = 0; k < rec.TypeParams.Count; k++)
                     map[rec.TypeParams[k]] = k < i.Args.Count ? i.Args[k] : PrimType.Unknown;
             }
+            return true;
+        }
+        if (t is QuantityType q)
+        {
+            rec = q.Def;
+            EnsureFilled(rec);
             return true;
         }
         rec = null!;
@@ -920,7 +1054,7 @@ public sealed partial class TypeChecker
                 if (from is FuncType ff2) return pt.Overloads.Any(o => FuncAssignable(ff2, o, infer, depth + 1));
                 if (from is PolyType) return true;
                 return false;
-            case RecordType or InstType:
+            case RecordType or InstType or QuantityType:
                 return RecordAssignable(from, to, infer, depth + 1);
             case TypeVar ttv:
                 if (from is TypeVar f2) return ReferenceEquals(f2, ttv);
@@ -955,6 +1089,8 @@ public sealed partial class TypeChecker
         if (frec.IsForward()) return true;
         if (ReferenceEquals(frec, trec))
         {
+            if (from is QuantityType fq && to is QuantityType tq)
+                return fq.Dimension == tq.Dimension;
             if (from is InstType fi && to is InstType ti)
             {
                 for (int i = 0; i < Math.Min(fi.Args.Count, ti.Args.Count); i++)
@@ -1125,6 +1261,8 @@ public sealed partial class TypeChecker
                 return MakeEnum("enum", e);
             case RequireTypeNode rq:
                 return ResolveRequireType(rq);
+            case StringLitTypeNode sl:
+                return new StringLitType(sl.Value);
         }
         return PrimType.Unknown;
     }
@@ -1139,9 +1277,9 @@ public sealed partial class TypeChecker
         foreach (TType m in members) flat.AddRange(m is UnionType mu ? mu.Members : new List<TType> { m });
         foreach (TType m in flat)
         {
-            if (m is RecordType || m is InstType)
+            if (m is RecordType || m is InstType || m is QuantityType)
             {
-                RecordType rec = m is RecordType r ? r : ((InstType)m).Def;
+                RecordType rec = m is RecordType r ? r : m is InstType it ? it.Def : ((QuantityType)m).Def;
                 if (rec.Filling || rec.IsForward()) return;
                 bool hasIs = WhereSourceOf(m, out _) != null || LookupField(m, "__is", true) != null;
                 if (IsUserdataType(m))
@@ -1249,7 +1387,7 @@ public sealed partial class TypeChecker
             return Subst(v.TypeDef, amap);
         }
         if (v.TypeDef != null) t = v.TypeDef;
-        else if (v.Type != null && (v.Type is RecordType || v.Type is InstType || IsUnknown(v.Type))) t = v.Type;
+        else if (v.Type != null && (v.Type is RecordType || v.Type is InstType || v.Type is QuantityType || IsUnknown(v.Type))) t = v.Type;
         else
         {
             Err(n, $"{first} is not a type");
@@ -1283,6 +1421,27 @@ public sealed partial class TypeChecker
         if (n.TypeArgs != null)
         {
             var args = n.TypeArgs.Select(a => ResolveType(a, scope)).ToList();
+            if (IsDimensionableUnitsRecord(t))
+            {
+                var qrec = (RecordType)t;
+                if (args.Count != 1)
+                {
+                    Err(n, "mismatch in number of type arguments");
+                    return qrec;
+                }
+                if (args[0] is StringLitType sl)
+                {
+                    if (TryResolveUnitDimension(sl.Value, out PhysicalDimension? dim, out string? uerr))
+                        return dim.HasValue ? new QuantityType(qrec, dim.Value) : qrec;
+                    Err(n, $"invalid unit expression '{sl.Value}': {uerr}");
+                    return qrec;
+                }
+                if (args[0] is QuantityType qt)
+                    return new QuantityType(qrec, qt.Dimension);
+                if (!IsUnknown(args[0]))
+                    Err(n, $"expected unit string literal or dimension type for {Disp(qrec)}, got {Disp(args[0])}");
+                return qrec;
+            }
             if (t is FuncType ft && ft.TypeParams != null)
             {
                 var map = new Dictionary<TypeVar, TType>();
@@ -1665,7 +1824,7 @@ public sealed partial class TypeChecker
             }
     }
 
-    private static bool AsRecordNoFill(TType t) => t is RecordType || t is InstType;
+    private static bool AsRecordNoFill(TType t) => t is RecordType || t is InstType || t is QuantityType;
 
     // ------------------------------------------------------------------ modules
 

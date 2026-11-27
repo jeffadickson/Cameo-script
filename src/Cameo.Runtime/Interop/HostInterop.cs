@@ -72,21 +72,30 @@ internal static class HostInterop
 
     // ------------------------------------------------------------------ Register (delegate)
 
-    internal static (NativeFunction Fn, string Declaration) BindDelegate(string name, Delegate fn, bool asFuture)
+    internal static (NativeFunction Fn, string Declaration) BindDelegate(
+        LuaState state,
+        string name,
+        Delegate fn,
+        bool asFuture,
+        Types.IUnitDimensionResolver? unitResolver)
     {
         ValidateIdentifier(name, nameof(name));
         ArgumentNullException.ThrowIfNull(fn);
 
         MethodInfo method = fn.Method;
-        ValidateMethodSignature(name, method, asFuture);
+        ValidateMethodSignature(state, name, method, asFuture, unitResolver);
         NativeFunction native = BuildNative(name, fn.Target, method, asFuture);
-        string sig = BuildFunctionTypeSignature(method, asFuture);
+        string sig = BuildFunctionTypeSignature(state, method, asFuture);
         return (native, $"global {name}: {sig}\n");
     }
 
     // ------------------------------------------------------------------ Expose (object)
 
-    internal static (HostObject Obj, string Declaration) BindObject(LuaState state, string name, object target)
+    internal static (HostObject Obj, string Declaration) BindObject(
+        LuaState state,
+        string name,
+        object target,
+        Types.IUnitDimensionResolver? unitResolver)
     {
         ValidateIdentifier(name, nameof(name));
         ArgumentNullException.ThrowIfNull(target);
@@ -126,7 +135,11 @@ internal static class HostInterop
             if (getter == null)
                 throw new ArgumentException($"Exposed property {type.Name}.{prop.Name} must have a public getter");
 
+            UnitAttribute? propUnit = prop.GetCustomAttribute<UnitAttribute>(true);
             string memberLabel = $"{name}.{scriptName}";
+            if (propUnit != null)
+                ValidateUnitAttribute(state, memberLabel, prop.PropertyType, propUnit, unitResolver);
+
             getters[scriptName] = s =>
             {
                 try
@@ -151,7 +164,7 @@ internal static class HostInterop
                 {
                     try
                     {
-                        object? arg = FromLuaValue(s, val, prop.PropertyType, memberLabel, 0);
+                        object? arg = FromLuaValue(s, val, prop.PropertyType, propUnit, memberLabel, 0);
                         setter.Invoke(target, [arg]);
                     }
                     catch (TargetInvocationException tie)
@@ -165,7 +178,7 @@ internal static class HostInterop
                 };
             }
 
-            fieldsDecl.Add($"    {scriptName}: {ToTealReturnType(prop.PropertyType)}");
+            fieldsDecl.Add($"    {scriptName}: {ToTealReturnType(state, prop.PropertyType, propUnit)}");
         }
 
         foreach (MethodInfo method in allMethods)
@@ -181,9 +194,9 @@ internal static class HostInterop
 
             bool asFuture = attr?.AsFuture == true;
             string memberLabel = $"{name}.{scriptName}";
-            ValidateMethodSignature(memberLabel, method, asFuture);
+            ValidateMethodSignature(state, memberLabel, method, asFuture, unitResolver);
             methods[scriptName] = BuildNative(memberLabel, target, method, asFuture);
-            fieldsDecl.Add($"    {scriptName}: {BuildFunctionTypeSignature(method, asFuture)}");
+            fieldsDecl.Add($"    {scriptName}: {BuildFunctionTypeSignature(state, method, asFuture)}");
         }
 
         Table meta = GetHostObjectMetatable(state);
@@ -248,13 +261,44 @@ internal static class HostInterop
             return (Value.Nil, $"global {name}: any\n");
         Type runtimeType = value.GetType();
         Value v = ToLuaValue(state, value, runtimeType);
-        string tealType = ToTealValueType(value, runtimeType);
+        string tealType = ToTealValueType(state, value, runtimeType);
         return (v, $"global {name}: {tealType}\n");
     }
 
     // ------------------------------------------------------------------ Method binding
 
-    private static void ValidateMethodSignature(string label, MethodInfo method, bool asFuture)
+    private static IHostTypeMarshaller? FindMarshaller(LuaState state, Type coreType)
+    {
+        if (state.HostTypeMarshallers == null) return null;
+        foreach (IHostTypeMarshaller m in state.HostTypeMarshallers)
+            if (m.CanMarshal(coreType)) return m;
+        return null;
+    }
+
+    private static void ValidateUnitAttribute(
+        LuaState state,
+        string label,
+        Type clrType,
+        UnitAttribute unitAttr,
+        Types.IUnitDimensionResolver? unitResolver)
+    {
+        Type core = Nullable.GetUnderlyingType(clrType) ?? clrType;
+        bool validTarget = IsFloatClrType(core)
+            || FindMarshaller(state, core) != null
+            || (TryGetSequenceElementType(core, out Type? elem) && IsFloatClrType(Nullable.GetUnderlyingType(elem) ?? elem));
+        if (!validTarget)
+            throw new ArgumentException($"[Unit(\"{unitAttr.Unit}\")] on '{label}' is only supported on floating-point numeric, numeric sequence, or quantity types (got '{clrType.Name}')");
+
+        if (unitResolver != null && !unitResolver.TryResolveUnitDimension(unitAttr.Unit, out _, out string? err))
+            throw new ArgumentException($"Invalid [Unit(\"{unitAttr.Unit}\")] on '{label}': {err}");
+    }
+
+    private static void ValidateMethodSignature(
+        LuaState state,
+        string label,
+        MethodInfo method,
+        bool asFuture,
+        Types.IUnitDimensionResolver? unitResolver)
     {
         if (method.IsGenericMethodDefinition)
             throw new ArgumentException($"Generic method '{label}' cannot be exposed to scripts");
@@ -264,7 +308,10 @@ internal static class HostInterop
             Type pt = p.ParameterType;
             if (pt.IsByRef || pt.IsPointer || pt.IsByRefLike)
                 throw new ArgumentException($"Unsupported parameter type '{pt.Name}' in '{label}' (parameter '{p.Name}')");
-            ValidateSupportedParamType(label, pt);
+            ValidateSupportedParamType(state, label, pt);
+            UnitAttribute? uattr = p.GetCustomAttribute<UnitAttribute>(true);
+            if (uattr != null)
+                ValidateUnitAttribute(state, $"{label}({p.Name})", pt, uattr, unitResolver);
         }
 
         Type ret = method.ReturnType;
@@ -276,23 +323,33 @@ internal static class HostInterop
             throw new ArgumentException($"Host function '{label}' has asFuture=true but returns '{ret.Name}' instead of Task or Task<T>");
         if (!asFuture && returnsTask)
             throw new ArgumentException($"Host function '{label}' returns '{ret.Name}'; pass asFuture: true to expose it as a Future");
+
+        UnitAttribute? retUnit = method.ReturnParameter.GetCustomAttribute<UnitAttribute>(true);
+        if (retUnit != null)
+        {
+            Type effectiveRet = asFuture && ret.IsGenericType && ret.GetGenericTypeDefinition() == typeof(Task<>)
+                ? ret.GetGenericArguments()[0]
+                : ret;
+            ValidateUnitAttribute(state, $"{label}:return", effectiveRet, retUnit, unitResolver);
+        }
     }
 
-    private static void ValidateSupportedParamType(string label, Type pt)
+    private static void ValidateSupportedParamType(LuaState state, string label, Type pt)
     {
         Type core = Nullable.GetUnderlyingType(pt) ?? pt;
         if (core == typeof(bool) || core == typeof(string) || core == typeof(Value) ||
             core == typeof(FloatArray) || core == typeof(LuaList) || core == typeof(LuaDict) ||
-            IsIntegerClrType(core) || IsFloatClrType(core))
+            IsIntegerClrType(core) || IsFloatClrType(core) ||
+            FindMarshaller(state, core) != null)
             return;
         if (TryGetSequenceElementType(core, out Type? elem))
         {
-            ValidateSupportedParamType(label, elem);
+            ValidateSupportedParamType(state, label, elem);
             return;
         }
         if (TryGetStringDictionaryValueType(core, out Type? valType))
         {
-            ValidateSupportedParamType(label, valType);
+            ValidateSupportedParamType(state, label, valType);
             return;
         }
         throw new ArgumentException($"Unsupported host interop parameter type '{pt.Name}' in '{label}'");
@@ -301,9 +358,13 @@ internal static class HostInterop
     private static NativeFunction BuildNative(string label, object? target, MethodInfo method, bool asFuture)
     {
         ParameterInfo[] parameters = method.GetParameters();
+        var paramUnits = new UnitAttribute?[parameters.Length];
         int requiredCount = 0;
         for (int i = 0; i < parameters.Length; i++)
+        {
             if (!parameters[i].HasDefaultValue) requiredCount = i + 1;
+            paramUnits[i] = parameters[i].GetCustomAttribute<UnitAttribute>(true);
+        }
 
         Type returnType = method.ReturnType;
         Type? taskResultType = asFuture && returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>)
@@ -328,7 +389,7 @@ internal static class HostInterop
                 }
                 else
                 {
-                    args[i] = FromLuaValue(c.L, c[i], p.ParameterType, label, i);
+                    args[i] = FromLuaValue(c.L, c[i], p.ParameterType, paramUnits[i], label, i);
                 }
             }
 
@@ -417,7 +478,7 @@ internal static class HostInterop
 
     // ------------------------------------------------------------------ Value marshalling
 
-    internal static object? FromLuaValue(LuaState state, Value v, Type targetType, string label, int argIndex)
+    internal static object? FromLuaValue(LuaState state, Value v, Type targetType, UnitAttribute? unitAttr, string label, int argIndex)
     {
         Type? nullableInner = Nullable.GetUnderlyingType(targetType);
         if (v.IsNil)
@@ -464,15 +525,28 @@ internal static class HostInterop
         }
         if (IsFloatClrType(core))
         {
+            if (unitAttr != null)
+            {
+                if (v.O is IHostQuantity hq)
+                {
+                    if (!hq.TryConvertToUnit(unitAttr.Unit, out double qv, out string? err))
+                        throw new LuaException($"{label}: bad argument #{argIndex + 1} ({err})");
+                    return ConvertFloat(qv, core);
+                }
+                if (!unitAttr.AllowNumber)
+                    throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected SharpUnits.Quantity<\"{unitAttr.Unit}\">, got {v.TypeName})");
+            }
             if (!v.TryToDouble(out double dv))
-                throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected number, got {v.TypeName})");
-            if (core == typeof(double)) return dv;
-            if (core == typeof(float)) return (float)dv;
-            if (core == typeof(decimal)) return (decimal)dv;
+                throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected {(unitAttr != null ? $"number or SharpUnits.Quantity<\"{unitAttr.Unit}\">" : "number")}, got {v.TypeName})");
+            return ConvertFloat(dv, core);
+        }
+        if (FindMarshaller(state, core) is { } marshaller)
+        {
+            return marshaller.FromLuaValue(state, v, core, unitAttr, label, argIndex);
         }
         if (TryGetSequenceElementType(core, out Type? elemType))
         {
-            return ConvertSequenceFromLua(state, v, core, elemType, label, argIndex);
+            return ConvertSequenceFromLua(state, v, core, elemType, unitAttr, label, argIndex);
         }
         if (TryGetStringDictionaryValueType(core, out Type? valType))
         {
@@ -480,6 +554,13 @@ internal static class HostInterop
         }
 
         throw new LuaException($"{label}: cannot convert argument #{argIndex + 1} to {targetType.Name}");
+    }
+
+    private static object ConvertFloat(double dv, Type core)
+    {
+        if (core == typeof(double)) return dv;
+        if (core == typeof(float)) return (float)dv;
+        return (decimal)dv;
     }
 
     private static object ConvertInteger(long iv, Type core, string label, int argIndex)
@@ -501,7 +582,14 @@ internal static class HostInterop
         throw new LuaException($"{label}: unsupported integer type {core.Name}");
     }
 
-    private static object ConvertSequenceFromLua(LuaState state, Value v, Type core, Type elemType, string label, int argIndex)
+    private static object ConvertSequenceFromLua(
+        LuaState state,
+        Value v,
+        Type core,
+        Type elemType,
+        UnitAttribute? unitAttr,
+        string label,
+        int argIndex)
     {
         var items = new List<object?>();
         if (v.O is LuaList list)
@@ -509,7 +597,7 @@ internal static class HostInterop
             for (int i = 0; i < list.Items.Count; i++)
             {
                 if (state.PollStep()) state.CheckAbortOrStep();
-                items.Add(FromLuaValue(state, list.Items[i], elemType, label, argIndex));
+                items.Add(FromLuaValue(state, list.Items[i], elemType, unitAttr, label, argIndex));
             }
         }
         else if (v.O is Table tbl)
@@ -518,10 +606,10 @@ internal static class HostInterop
             for (int i = 1; i <= len; i++)
             {
                 if (state.PollStep()) state.CheckAbortOrStep();
-                items.Add(FromLuaValue(state, tbl.GetInt(i), elemType, label, argIndex));
+                items.Add(FromLuaValue(state, tbl.GetInt(i), elemType, unitAttr, label, argIndex));
             }
         }
-        else if (v.O is FloatArray fa && (elemType == typeof(double) || elemType == typeof(float)))
+        else if (v.O is FloatArray fa && (elemType == typeof(double) || elemType == typeof(float)) && (unitAttr == null || unitAttr.AllowNumber))
         {
             for (int i = 0; i < fa.Data.Length; i++)
             {
@@ -556,7 +644,7 @@ internal static class HostInterop
                 if (state.PollStep()) state.CheckAbortOrStep();
                 if (kv.Key.Kind != ValueKind.String)
                     throw new LuaException($"{label}: bad argument #{argIndex + 1} (dictionary key must be string, got {kv.Key.TypeName})");
-                dict[kv.Key.ToText()] = FromLuaValue(state, kv.Value, valType, label, argIndex);
+                dict[kv.Key.ToText()] = FromLuaValue(state, kv.Value, valType, null, label, argIndex);
             }
         }
         else if (v.O is Table tbl)
@@ -567,7 +655,7 @@ internal static class HostInterop
                 if (state.PollStep()) state.CheckAbortOrStep();
                 if (nextKey.Kind != ValueKind.String)
                     throw new LuaException($"{label}: bad argument #{argIndex + 1} (table key must be string, got {nextKey.TypeName})");
-                dict[nextKey.ToText()] = FromLuaValue(state, nextVal, valType, label, argIndex);
+                dict[nextKey.ToText()] = FromLuaValue(state, nextVal, valType, null, label, argIndex);
                 key = nextKey;
             }
         }
@@ -604,6 +692,11 @@ internal static class HostInterop
         }
 
         Type actualType = value.GetType();
+        if (FindMarshaller(state, actualType) is { } marshaller)
+        {
+            return marshaller.ToLuaValue(state, value, declaredType);
+        }
+
         if (value is IDictionary nonGenDict)
         {
             var dict = new LuaDict(state);
@@ -648,23 +741,28 @@ internal static class HostInterop
 
     // ------------------------------------------------------------------ Static Teal/Cameo type declarations
 
-    private static string BuildFunctionTypeSignature(MethodInfo method, bool asFuture)
+    internal static string EscapeTealString(string s) =>
+        s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static string BuildFunctionTypeSignature(LuaState state, MethodInfo method, bool asFuture)
     {
         ParameterInfo[] ps = method.GetParameters();
         var parts = new string[ps.Length];
         for (int i = 0; i < ps.Length; i++)
         {
-            string t = ToTealParamType(ps[i].ParameterType);
+            UnitAttribute? uattr = ps[i].GetCustomAttribute<UnitAttribute>(true);
+            string t = ToTealParamType(state, ps[i].ParameterType, uattr);
             parts[i] = ps[i].HasDefaultValue ? $"? {t}" : t;
         }
         string args = string.Join(", ", parts);
+        UnitAttribute? retUnit = method.ReturnParameter.GetCustomAttribute<UnitAttribute>(true);
 
         if (asFuture)
         {
             Type ret = method.ReturnType;
             if (ret.IsGenericType && ret.GetGenericTypeDefinition() == typeof(Task<>))
             {
-                string inner = ToTealReturnType(ret.GetGenericArguments()[0]);
+                string inner = ToTealReturnType(state, ret.GetGenericArguments()[0], retUnit);
                 return $"function({args}): Future<{inner}>";
             }
             return $"function({args}): Future<any>";
@@ -672,50 +770,64 @@ internal static class HostInterop
 
         if (method.ReturnType == typeof(void))
             return $"function({args})";
-        return $"function({args}): {ToTealReturnType(method.ReturnType)}";
+        return $"function({args}): {ToTealReturnType(state, method.ReturnType, retUnit)}";
     }
 
-    private static string ToTealParamType(Type pt)
+    private static string FormatFloatWithUnit(UnitAttribute unitAttr)
+    {
+        string qty = $"SharpUnits.Quantity<\"{EscapeTealString(unitAttr.Unit)}\">";
+        return unitAttr.AllowNumber ? $"number | {qty}" : qty;
+    }
+
+    private static string ToTealParamType(LuaState state, Type pt, UnitAttribute? unitAttr)
     {
         Type core = Nullable.GetUnderlyingType(pt) ?? pt;
         if (core == typeof(bool)) return "boolean";
         if (IsIntegerClrType(core)) return "integer";
-        if (IsFloatClrType(core)) return "number";
+        if (IsFloatClrType(core))
+            return unitAttr != null ? FormatFloatWithUnit(unitAttr) : "number";
         if (core == typeof(string)) return "string";
         if (core == typeof(FloatArray)) return "FloatArray";
         if (core == typeof(LuaList)) return "List<any>";
         if (core == typeof(LuaDict)) return "Dict<any, any>";
         if (core == typeof(Value)) return "any";
+        if (FindMarshaller(state, core) is { } marshaller)
+            return marshaller.GetTealType(core, unitAttr);
         if (TryGetSequenceElementType(core, out Type? elem))
         {
-            string e = ToTealReturnType(elem);
+            Type elemCore = Nullable.GetUnderlyingType(elem) ?? elem;
+            string e = unitAttr != null && IsFloatClrType(elemCore)
+                ? FormatFloatWithUnit(unitAttr)
+                : ToTealReturnType(state, elem, null);
             return $"List<{e}> | {{{e}}}";
         }
         if (TryGetStringDictionaryValueType(core, out Type? val))
         {
-            string v = ToTealReturnType(val);
+            string v = ToTealReturnType(state, val, null);
             return $"Dict<string, {v}> | {{string: {v}}}";
         }
         return "any";
     }
 
-    private static string ToTealReturnType(Type rt)
+    private static string ToTealReturnType(LuaState state, Type rt, UnitAttribute? unitAttr)
     {
         Type? nullableInner = Nullable.GetUnderlyingType(rt);
         Type core = nullableInner ?? rt;
-        string baseType = CoreToTealType(core);
+        string baseType = CoreToTealType(state, core, unitAttr);
         return nullableInner != null ? $"{baseType} | nil" : baseType;
     }
 
-    private static string ToTealValueType(object value, Type runtimeType)
+    private static string ToTealValueType(LuaState state, object value, Type runtimeType)
     {
         if (value is FloatArray) return "FloatArray";
         if (value is LuaList) return "List<any>";
         if (value is LuaDict) return "Dict<any, any>";
-        return CoreToTealType(runtimeType);
+        if (FindMarshaller(state, runtimeType) is { } marshaller)
+            return marshaller.GetTealValueType(value, runtimeType);
+        return CoreToTealType(state, runtimeType, null);
     }
 
-    private static string CoreToTealType(Type core)
+    private static string CoreToTealType(LuaState state, Type core, UnitAttribute? unitAttr)
     {
         if (core == typeof(bool)) return "boolean";
         if (IsIntegerClrType(core)) return "integer";
@@ -725,12 +837,14 @@ internal static class HostInterop
         if (core == typeof(LuaList)) return "List<any>";
         if (core == typeof(LuaDict)) return "Dict<any, any>";
         if (core == typeof(Value)) return "any";
+        if (FindMarshaller(state, core) is { } marshaller)
+            return marshaller.GetTealType(core, unitAttr);
         if (TryGetGenericDictionaryTypes(core, out Type? k, out Type? v))
-            return $"Dict<{CoreToTealType(k)}, {CoreToTealType(v)}>";
+            return $"Dict<{CoreToTealType(state, k, null)}, {CoreToTealType(state, v, null)}>";
         if (typeof(IDictionary).IsAssignableFrom(core))
             return "Dict<any, any>";
         if (TryGetSequenceElementType(core, out Type? elem))
-            return $"List<{CoreToTealType(elem)}>";
+            return $"List<{CoreToTealType(state, elem, null)}>";
         return "any";
     }
 

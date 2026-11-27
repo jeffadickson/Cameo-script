@@ -204,9 +204,16 @@ Cameo (including `--hermetic` and `--sandboxed`) and `tlvm` integrate
 
 - **`units` (`SharpUnits`)**: `units.unit`, `units.qty`, `units.parse`, `units.point`,
   and SIMD-backed `units.series` (`min`, `max`, `mean`, `rms`, `peak_to_peak`, `in_unit`,
-  `auto_scale`). Enforces ISO 80000 compile-time affine safety: `QuantityPoint + Quantity -> QuantityPoint`
-  and `QuantityPoint - QuantityPoint -> Quantity`, while `QuantityPoint + QuantityPoint` is
-  a compile-time error.
+  `auto_scale`). Enforces **both** ISO 80000 compile-time affine safety (`QuantityPoint + Quantity -> QuantityPoint`,
+  `QuantityPoint - QuantityPoint -> Quantity`, `QuantityPoint + QuantityPoint` rejected at
+  compile time) **and** compile-time SI dimensional checking on `Quantity` / `SymbolicUnit` /
+  `QuantitySeries` (`units.qty(2.2, "kOhm")` infers `SharpUnits.Quantity<Resistance>`,
+  dimensional algebra propagates through `*`/`/`, mismatched `+`/`-`/`<`/`==`/`in_unit`
+  and invalid unit typos fail at compile time, explicit annotations accept
+  `SharpUnits.Quantity<"Ohm">` or named aliases such as `SharpUnits.Resistance`,
+  `SharpUnits.Voltage`, `SharpUnits.Capacitance`, `SharpUnits.Inductance`, and host methods
+  annotated with `[Unit("Ohm")]` accept both plain numbers and dimension-checked `Quantity`
+  values with automatic conversion).
 - **`safenum` (`SharpSafeNumerics`)**: overflow-checked 64-bit integer operations
   (`intAdd`, `intSub`, `intMul`, `intDiv`, `intNeg`, `intInRange`) with explicit policies
   (`"reject"`, `"saturate"`, `"wrap"`, `"throw"`), SIMD 32-bit `intAddBatch`, exact Q32.32

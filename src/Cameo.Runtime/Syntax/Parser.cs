@@ -1575,8 +1575,8 @@ public sealed partial class Parser
         try
         {
             _p++;
-            var args = new List<TypeNode> { ParseType() };
-            while (AcceptOp(",")) args.Add(ParseType());
+            var args = new List<TypeNode> { ParseTypeArg() };
+            while (AcceptOp(",")) args.Add(ParseTypeArg());
             ExpectTypeClose();
             n.TypeArgs = args;
         }
@@ -1586,6 +1586,16 @@ public sealed partial class Parser
             PrepareTokenMutation();
             _toks[_p] = saved;
         }
+    }
+
+    private TypeNode ParseTypeArg()
+    {
+        if (Cur.Kind == TokenKind.String)
+        {
+            Token st = _toks[_p++];
+            return At(new StringLitTypeNode { Value = st.Text }, st);
+        }
+        return ParseType();
     }
 
     private TypeNode ParseFunctionType(bool cameoFn = false)

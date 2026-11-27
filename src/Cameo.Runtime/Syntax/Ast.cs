@@ -25,6 +25,8 @@ public sealed class ArrayTypeNode : TypeNode { public TypeNode Element = null!; 
 public sealed class TupleTypeNode : TypeNode { public List<TypeNode> Elements = new(); }
 public sealed class MapTypeNode : TypeNode { public TypeNode Key = null!, Value = null!; }
 public sealed class UnionTypeNode : TypeNode { public List<TypeNode> Members = new(); }
+/// <summary>A string literal used as a type argument, e.g. <c>SharpUnits.Quantity&lt;"Ohm"&gt;</c>.</summary>
+public sealed class StringLitTypeNode : TypeNode { public string Value = ""; }
 
 public sealed class TypeParam : Node
 {

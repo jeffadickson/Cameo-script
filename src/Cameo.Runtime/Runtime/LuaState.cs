@@ -117,6 +117,18 @@ public sealed partial class LuaState
     }
 
     private List<Action<LuaState>>? _extensionOpeners;
+    internal List<Interop.IHostTypeMarshaller>? HostTypeMarshallers { get; private set; }
+
+    /// <summary>
+    /// Registers a custom CLR type marshaller (such as <c>SharpUnits</c> quantities) for
+    /// <see cref="ScriptEngine.Register"/>, <see cref="ScriptEngine.Expose"/>, and <see cref="ScriptEngine.DefineValue"/>.
+    /// </summary>
+    public void RegisterHostTypeMarshaller(Interop.IHostTypeMarshaller marshaller)
+    {
+        ArgumentNullException.ThrowIfNull(marshaller);
+        HostTypeMarshallers ??= new List<Interop.IHostTypeMarshaller>();
+        if (!HostTypeMarshallers.Contains(marshaller)) HostTypeMarshallers.Add(marshaller);
+    }
 
     /// <summary>
     /// Opens a deterministic extension library on this VM and registers it so child worker VMs

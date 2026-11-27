@@ -407,7 +407,7 @@ public sealed partial class TypeChecker
                     }
                     return any;
                 }
-            case RecordType or InstType:
+            case RecordType or InstType or QuantityType:
                 {
                     if (LookupField(t, "__is", true) is FuncType { Macro: not null } isMacro)
                     {
@@ -504,7 +504,7 @@ public sealed partial class TypeChecker
                 }
             case StringLitType or EnumType:
                 return IndexString(at, key, lit);
-            case RecordType or InstType:
+            case RecordType or InstType or QuantityType:
                 {
                     AsRecord(ot, out var rec, out _);
                     if (lit != null)
@@ -964,6 +964,17 @@ public sealed partial class TypeChecker
             if (types.All(t => Assignable(t, cand))) return cand is EmptyTableType ? PrimType.Unknown : cand;
         }
         if (types.All(IsNil)) return PrimType.Unknown;
+        RecordType? sharedQtyDef = null;
+        bool allSameQtyDef = true;
+        foreach (TType t in types)
+        {
+            if (IsNil(t)) continue;
+            RecordType? def = t is QuantityType qt ? qt.Def : t as RecordType;
+            if (def == null || !IsDimensionableUnitsRecord(def)) { allSameQtyDef = false; break; }
+            if (sharedQtyDef == null) sharedQtyDef = def;
+            else if (!ReferenceEquals(sharedQtyDef, def)) { allSameQtyDef = false; break; }
+        }
+        if (allSameQtyDef && sharedQtyDef != null) return sharedQtyDef;
         return null;
     }
 
@@ -1028,6 +1039,66 @@ public sealed partial class TypeChecker
     }
 
     private static bool Loose(TType t) => IsUnknown(t) || t is TypeVar;
+
+    private bool TryCheckQuantityBinary(BinaryExpr b, BinaryOp op, TType l, TType r, out TType result)
+    {
+        result = PrimType.Unknown;
+        if (_quantityDefinition == null && _symbolicUnitDefinition == null) return false;
+
+        QuantityType? lq = l as QuantityType;
+        QuantityType? rq = r as QuantityType;
+        if (lq == null && rq == null) return false;
+
+        bool lIsQty = lq != null && ReferenceEquals(lq.Def, _quantityDefinition);
+        bool rIsQty = rq != null && ReferenceEquals(rq.Def, _quantityDefinition);
+        bool lIsUntaggedQty = ReferenceEquals(l, _quantityDefinition);
+        bool rIsUntaggedQty = ReferenceEquals(r, _quantityDefinition);
+        bool lIsUnit = lq != null && ReferenceEquals(lq.Def, _symbolicUnitDefinition);
+        bool rIsUnit = rq != null && ReferenceEquals(rq.Def, _symbolicUnitDefinition);
+        bool lIsUntaggedUnit = ReferenceEquals(l, _symbolicUnitDefinition);
+        bool rIsUntaggedUnit = ReferenceEquals(r, _symbolicUnitDefinition);
+
+        switch (op)
+        {
+            case BinaryOp.Add:
+            case BinaryOp.Sub:
+                if (lIsQty && rIsQty)
+                {
+                    if (lq!.Dimension != rq!.Dimension)
+                    {
+                        Err(b, $"cannot use operator '{OpName(op)}' on incompatible physical dimensions: {Disp(l)} and {Disp(r)}");
+                        result = PrimType.Unknown;
+                        return true;
+                    }
+                    result = lq;
+                    return true;
+                }
+                if (lIsQty && rIsUntaggedQty) { result = lq!; return true; }
+                if (rIsQty && lIsUntaggedQty) { result = rq!; return true; }
+                return false;
+
+            case BinaryOp.Mul:
+                if (lIsQty && rIsQty) { result = new QuantityType(_quantityDefinition!, lq!.Dimension * rq!.Dimension); return true; }
+                if (lIsQty && IsNumeric(r)) { result = lq!; return true; }
+                if (IsNumeric(l) && rIsQty) { result = rq!; return true; }
+                if ((lIsQty && rIsUntaggedQty) || (lIsUntaggedQty && rIsQty)) { result = _quantityDefinition!; return true; }
+                if (lIsUnit && rIsUnit) { result = new QuantityType(_symbolicUnitDefinition!, lq!.Dimension * rq!.Dimension); return true; }
+                if ((lIsUnit && rIsUntaggedUnit) || (lIsUntaggedUnit && rIsUnit)) { result = _symbolicUnitDefinition!; return true; }
+                return false;
+
+            case BinaryOp.Div:
+                if (lIsQty && rIsQty) { result = new QuantityType(_quantityDefinition!, lq!.Dimension / rq!.Dimension); return true; }
+                if (lIsQty && IsNumeric(r)) { result = lq!; return true; }
+                if (IsNumeric(l) && rIsQty) { result = new QuantityType(_quantityDefinition!, rq!.Dimension.Pow(-1)); return true; }
+                if ((lIsQty && rIsUntaggedQty) || (lIsUntaggedQty && rIsQty)) { result = _quantityDefinition!; return true; }
+                if (lIsUnit && rIsUnit) { result = new QuantityType(_symbolicUnitDefinition!, lq!.Dimension / rq!.Dimension); return true; }
+                if ((lIsUnit && rIsUntaggedUnit) || (lIsUntaggedUnit && rIsUnit)) { result = _symbolicUnitDefinition!; return true; }
+                return false;
+
+            default:
+                return false;
+        }
+    }
 
     private TType CheckBinary(BinaryExpr b, TType? expected)
     {
@@ -1097,6 +1168,12 @@ public sealed partial class TypeChecker
         {
             case BinaryOp.Eq:
             case BinaryOp.Ne:
+                if (l is QuantityType lqe && r is QuantityType rqe && ReferenceEquals(lqe.Def, rqe.Def))
+                {
+                    if (lqe.Dimension != rqe.Dimension)
+                        Err(b, $"cannot compare incompatible physical dimensions: {Disp(l)} and {Disp(r)}");
+                    return PrimType.Boolean;
+                }
                 if (l is EnumType le && rt is StringLitType rs && !le.Values.Contains(rs.Value)) Err(b.Right, Mismatch(rt, l));
                 else if (r is EnumType re && lt is StringLitType ls && !re.Values.Contains(ls.Value)) Err(b.Left, Mismatch(lt, r));
                 else if (MetaResult(l, r, "__eq", b) != null) { }
@@ -1107,6 +1184,12 @@ public sealed partial class TypeChecker
             case BinaryOp.Le:
             case BinaryOp.Gt:
             case BinaryOp.Ge:
+                if (l is QuantityType lqc && r is QuantityType rqc && ReferenceEquals(lqc.Def, rqc.Def))
+                {
+                    if (lqc.Dimension != rqc.Dimension)
+                        Err(b, $"cannot compare incompatible physical dimensions: {Disp(l)} and {Disp(r)}");
+                    return PrimType.Boolean;
+                }
                 if (Loose(l) || Loose(r)) return PrimType.Boolean;
                 if (IsNumeric(l) && IsNumeric(r)) return PrimType.Boolean;
                 if (IsStringLike(l) && IsStringLike(r)) return PrimType.Boolean;
@@ -1138,6 +1221,8 @@ public sealed partial class TypeChecker
             default:
                 {
                     // arithmetic
+                    if (TryCheckQuantityBinary(b, op, l, r, out TType qres))
+                        return qres;
                     if (IsNumeric(l) && IsNumeric(r))
                     {
                         if (op == BinaryOp.Div || op == BinaryOp.Pow) return PrimType.Number;
@@ -1169,6 +1254,7 @@ public sealed partial class TypeChecker
             case UnaryOp.Neg:
                 if (IsNumeric(t)) return t;
                 if (Loose(t)) return t;
+                if (t is QuantityType qt && ReferenceEquals(qt.Def, _quantityDefinition)) return qt;
                 {
                     TType? m = LookupField(t, "__unm", true);
                     if (m is FuncType f) return f.Returns.Count > 0 && f.TypeParams == null ? f.Returns[0] : PrimType.Unknown;
@@ -1341,6 +1427,8 @@ public sealed partial class TypeChecker
             return Assignable(PrimType.String, first);
         if (receiver is InstType instance && instance.Def.IsUserdata)
             return first is InstType selfInst && ReferenceEquals(selfInst.Def, instance.Def);
+        if (receiver is QuantityType q && q.Def.IsUserdata)
+            return ReferenceEquals(first, q.Def);
         if (receiver is RecordType rec && rec.IsUserdata)
             return ReferenceEquals(first, rec);
         return false;
@@ -1361,7 +1449,10 @@ public sealed partial class TypeChecker
         if (IsViaTypeName(dot.Object) || dot.Object.TypeInfo is not TType ot) return false;
         TType baseOt = dot.IsOptional ? StripNil(ot) : ot;
         TType w = Widen(baseOt);
-        bool isBuiltIn = IsStringLike(w) || (w is InstType inst && inst.Def.IsUserdata) || (w is RecordType rec && rec.IsUserdata);
+        bool isBuiltIn = IsStringLike(w)
+            || (w is InstType inst && inst.Def.IsUserdata)
+            || (w is QuantityType q && q.Def.IsUserdata)
+            || (w is RecordType rec && rec.IsUserdata);
         bool isCameoInterfaceOrMethodRec = _cameoMode && !isBuiltIn && AsRecord(w, out var urec, out _)
             && (urec.IsInterface || urec.CameoRecordId != null);
         if (!isBuiltIn && !isCameoInterfaceOrMethodRec)
@@ -1513,7 +1604,11 @@ public sealed partial class TypeChecker
                     ExpandMacro(at, f, margs, false);
                     return mres;
                 }
-                return AdjustStringSpecial(f, args, self != null, Apply(at, f, args, self, expected));
+                {
+                    Multi res = Apply(at, f, args, self, expected);
+                    res = AdjustStringSpecial(f, args, self != null, res);
+                    return AdjustUnitsSpecial(at, f, self, args, res);
+                }
             case PolyType p:
                 {
                     // tuple arguments prefer overloads declared for a tuple of that size (table.unpack)
@@ -1524,7 +1619,8 @@ public sealed partial class TypeChecker
                     foreach (FuncType o in order)
                     {
                         Multi? r = null;
-                        if (Silently(() => r = Apply(at, o, args, self, expected)) == 0) return r!;
+                        if (Silently(() => r = Apply(at, o, args, self, expected)) == 0)
+                            return AdjustUnitsPolySpecial(at, p, args, r!);
                     }
                     // report against the overload with the fewest problems
                     FuncType best = p.Overloads[0];
@@ -1534,7 +1630,7 @@ public sealed partial class TypeChecker
                         int n = Silently(() => Apply(at, o, args, self, expected));
                         if (n < bestErrs) { bestErrs = n; best = o; }
                     }
-                    return Apply(at, best, args, self, expected);
+                    return AdjustUnitsPolySpecial(at, p, args, Apply(at, best, args, self, expected));
                 }
             case PrimType { Kind: Prim.Unknown or Prim.Any }:
             case UnionType:
@@ -1624,6 +1720,159 @@ public sealed partial class TypeChecker
             else m.Types.AddRange(caps);
         }
         return m;
+    }
+
+    private bool TryExtractConstInt(Expr e, out int value)
+    {
+        if (e is NumberExpr { IsInteger: true } n && n.IntValue is >= int.MinValue and <= int.MaxValue)
+        {
+            value = (int)n.IntValue;
+            return true;
+        }
+        if (e is UnaryExpr { Op: UnaryOp.Neg, Operand: NumberExpr { IsInteger: true } nn } && -nn.IntValue is >= int.MinValue and <= int.MaxValue)
+        {
+            value = (int)(-nn.IntValue);
+            return true;
+        }
+        value = 0;
+        return false;
+    }
+
+    private bool TryResolveUnitArg(Expr arg, out PhysicalDimension dim)
+    {
+        if (arg is StringExpr se)
+        {
+            if (TryResolveUnitDimension(se.Value, out PhysicalDimension? resolved, out string? uerr))
+            {
+                if (resolved.HasValue)
+                {
+                    dim = resolved.Value;
+                    return true;
+                }
+                dim = default;
+                return false;
+            }
+            Err(arg, $"invalid unit expression '{se.Value}': {uerr}");
+            dim = default;
+            return false;
+        }
+        if (arg.TypeInfo is QuantityType uq && ReferenceEquals(uq.Def, _symbolicUnitDefinition))
+        {
+            dim = uq.Dimension;
+            return true;
+        }
+        dim = default;
+        return false;
+    }
+
+    // SharpUnits compile-time dimensional inference & compatibility checking
+    private Multi AdjustUnitsSpecial(Node at, FuncType f, TType? self, List<Expr> args, Multi result)
+    {
+        if (_quantityDefinition == null) return result;
+        bool isMethod = self != null;
+
+        if (ReferenceEquals(f, _unitsQty))
+        {
+            if (args.Count >= 2 && TryResolveUnitArg(args[1], out PhysicalDimension dim))
+                return new Multi(new QuantityType(_quantityDefinition, dim));
+            return result;
+        }
+        if (ReferenceEquals(f, _unitsParse))
+        {
+            if (args.Count >= 1 && args[0] is StringExpr se)
+            {
+                if (TryResolveQuantityLiteralDimension(se.Value, out PhysicalDimension? dim, out string? uerr))
+                    return dim.HasValue ? new Multi(new QuantityType(_quantityDefinition, dim.Value)) : result;
+                Err(args[0], $"invalid quantity literal '{se.Value}': {uerr}");
+            }
+            return result;
+        }
+        if (ReferenceEquals(f, _unitsUnit) && _symbolicUnitDefinition != null)
+        {
+            if (args.Count >= 1 && args[0] is StringExpr se)
+            {
+                if (TryResolveUnitDimension(se.Value, out PhysicalDimension? dim, out string? uerr))
+                    return dim.HasValue ? new Multi(new QuantityType(_symbolicUnitDefinition, dim.Value)) : result;
+                Err(args[0], $"invalid unit expression '{se.Value}': {uerr}");
+            }
+            return result;
+        }
+
+        TType? recv = isMethod ? self : (args.Count >= 1 ? args[0].TypeInfo as TType : null);
+        int arg0 = isMethod ? 0 : 1;
+
+        if (ReferenceEquals(f, _qtyInUnit))
+        {
+            QuantityType? rq = recv as QuantityType;
+            PhysicalDimension targetDim = default;
+            bool hasTarget = args.Count > arg0 && TryResolveUnitArg(args[arg0], out targetDim);
+            if (hasTarget)
+            {
+                if (rq != null && rq.Dimension != targetDim)
+                    Err(at, $"cannot convert {Disp(rq)} to incompatible unit ({targetDim.DisplayName})");
+                return new Multi(new QuantityType(_quantityDefinition, targetDim));
+            }
+            return rq != null ? new Multi(rq) : result;
+        }
+        if (ReferenceEquals(f, _qtyToSi))
+        {
+            return recv is QuantityType rq ? new Multi(rq) : result;
+        }
+        if (ReferenceEquals(f, _qtyIsEquivalent))
+        {
+            if (recv is QuantityType rq && args.Count > arg0 && args[arg0].TypeInfo is QuantityType oq
+                && ReferenceEquals(rq.Def, oq.Def) && rq.Dimension != oq.Dimension)
+            {
+                Err(at, $"cannot compare incompatible physical dimensions: {Disp(rq)} and {Disp(oq)}");
+            }
+            return result;
+        }
+
+        if (_symbolicUnitDefinition != null && recv is QuantityType uq && ReferenceEquals(uq.Def, _symbolicUnitDefinition))
+        {
+            if (ReferenceEquals(f, _unitToSi)) return new Multi(uq);
+            if (ReferenceEquals(f, _unitPow) && args.Count > arg0 && TryExtractConstInt(args[arg0], out int exp))
+                return new Multi(new QuantityType(_symbolicUnitDefinition, uq.Dimension.Pow(exp)));
+            if (ReferenceEquals(f, _unitRoot) && args.Count > arg0 && TryExtractConstInt(args[arg0], out int deg))
+            {
+                if (uq.Dimension.TryRoot(deg, out PhysicalDimension rdim))
+                    return new Multi(new QuantityType(_symbolicUnitDefinition, rdim));
+                Err(at, $"cannot take root {deg} of unit with dimension {uq.Dimension.DisplayName}");
+            }
+            return result;
+        }
+
+        if (_quantitySeriesDefinition != null && recv is QuantityType sq && ReferenceEquals(sq.Def, _quantitySeriesDefinition))
+        {
+            if (ReferenceEquals(f, _seriesInUnit))
+            {
+                if (args.Count > arg0 && TryResolveUnitArg(args[arg0], out PhysicalDimension targetDim))
+                {
+                    if (sq.Dimension != targetDim)
+                        Err(at, $"cannot convert {Disp(sq)} to incompatible unit ({targetDim.DisplayName})");
+                    return new Multi(new QuantityType(_quantitySeriesDefinition, targetDim));
+                }
+                return new Multi(sq);
+            }
+            if (ReferenceEquals(f, _seriesAutoScale) || ReferenceEquals(f, _seriesRelativeTo))
+                return new Multi(sq);
+            if (ReferenceEquals(f, _seriesMin) || ReferenceEquals(f, _seriesMax) ||
+                ReferenceEquals(f, _seriesMean) || ReferenceEquals(f, _seriesRms) ||
+                ReferenceEquals(f, _seriesPeakToPeak) || ReferenceEquals(f, _seriesAt))
+                return new Multi(new QuantityType(_quantityDefinition, sq.Dimension));
+        }
+
+        return result;
+    }
+
+    private Multi AdjustUnitsPolySpecial(Node at, PolyType p, List<Expr> args, Multi result)
+    {
+        if (_quantitySeriesDefinition != null && ReferenceEquals(p, _unitsSeries))
+        {
+            if (args.Count >= 2 && TryResolveUnitArg(args[1], out PhysicalDimension dim))
+                return new Multi(new QuantityType(_quantitySeriesDefinition, dim));
+        }
+        return result;
     }
 
     // string.format with a literal format: numeric directives need numeric arguments

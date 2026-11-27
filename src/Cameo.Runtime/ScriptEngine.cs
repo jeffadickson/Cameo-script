@@ -147,45 +147,60 @@ public sealed partial class ScriptEngine
         }
         // A parallel worker is an engine of its own, so that it can `require` the same modules.
         // The watchdog limits are not copied: stopping this engine's program stops its workers.
-        State.WorkerFactory = () => new ScriptEngine(new CameoRuntimeOptions
+        State.WorkerFactory = () =>
         {
-            TypeCheck = Options.TypeCheck,
-            Libraries = Options.Libraries,
-            AllowDebug = allowDebug,
-            ModulePaths = [.. _searchDirs],
-            AllowNetwork = Options.AllowNetwork,
-            AllowProcesses = Options.AllowProcesses,
-            ProcessPolicy = Options.ProcessPolicy,
-            AllowDatabase = Options.AllowDatabase,
-            FilePolicy = Options.FilePolicy,
-            NetworkPolicy = Options.NetworkPolicy,
-        }, _language).State;
-        State.SandboxedWorkerFactory = () => new ScriptEngine(new CameoRuntimeOptions
+            var w = new ScriptEngine(new CameoRuntimeOptions
+            {
+                TypeCheck = Options.TypeCheck,
+                Libraries = Options.Libraries,
+                AllowDebug = allowDebug,
+                ModulePaths = [.. _searchDirs],
+                AllowNetwork = Options.AllowNetwork,
+                AllowProcesses = Options.AllowProcesses,
+                ProcessPolicy = Options.ProcessPolicy,
+                AllowDatabase = Options.AllowDatabase,
+                FilePolicy = Options.FilePolicy,
+                NetworkPolicy = Options.NetworkPolicy,
+            }, _language);
+            w.SetUnitDimensionResolver(_unitDimensionResolver);
+            return w.State;
+        };
+        State.SandboxedWorkerFactory = () =>
         {
-            TypeCheck = Options.TypeCheck,
-            Libraries = Stdlib.CameoLibraries.Sandboxed,
-            AllowDebug = false,
-            ModulePaths = [.. _searchDirs],
-            AllowNetwork = false,
-            AllowProcesses = false,
-            ProcessPolicy = Options.ProcessPolicy,
-            AllowDatabase = false,
-            FilePolicy = Options.FilePolicy ?? FilePolicy.DenyAll,
-            NetworkPolicy = Options.NetworkPolicy,
-        }, _language).State;
-        State.HermeticWorkerFactory = () => new ScriptEngine(new CameoRuntimeOptions
+            var w = new ScriptEngine(new CameoRuntimeOptions
+            {
+                TypeCheck = Options.TypeCheck,
+                Libraries = Stdlib.CameoLibraries.Sandboxed,
+                AllowDebug = false,
+                ModulePaths = [.. _searchDirs],
+                AllowNetwork = false,
+                AllowProcesses = false,
+                ProcessPolicy = Options.ProcessPolicy,
+                AllowDatabase = false,
+                FilePolicy = Options.FilePolicy ?? FilePolicy.DenyAll,
+                NetworkPolicy = Options.NetworkPolicy,
+            }, _language);
+            w.SetUnitDimensionResolver(_unitDimensionResolver);
+            return w.State;
+        };
+        State.HermeticWorkerFactory = () =>
         {
-            TypeCheck = Options.TypeCheck,
-            Libraries = Stdlib.CameoLibraries.Hermetic,
-            AllowDebug = false,
-            ModulePaths = [.. _searchDirs],
-            AllowNetwork = false,
-            AllowProcesses = false,
-            ProcessPolicy = Options.ProcessPolicy,
-            AllowDatabase = false,
-            FilePolicy = Options.FilePolicy ?? FilePolicy.DenyAll,
-            NetworkPolicy = Options.NetworkPolicy,
-        }, _language).State;
+            var w = new ScriptEngine(new CameoRuntimeOptions
+            {
+                TypeCheck = Options.TypeCheck,
+                Libraries = Stdlib.CameoLibraries.Hermetic,
+                AllowDebug = false,
+                ModulePaths = [.. _searchDirs],
+                AllowNetwork = false,
+                AllowProcesses = false,
+                ProcessPolicy = Options.ProcessPolicy,
+                AllowDatabase = false,
+                FilePolicy = Options.FilePolicy ?? FilePolicy.DenyAll,
+                NetworkPolicy = Options.NetworkPolicy,
+            }, _language);
+            w.SetUnitDimensionResolver(_unitDimensionResolver);
+            return w.State;
+        };
         InitChecker();
     }
 
@@ -200,7 +215,7 @@ public sealed partial class ScriptEngine
     /// </summary>
     public void Register(string name, Delegate fn, bool asFuture = false, bool threadSafe = false)
     {
-        var (native, decl) = Interop.HostInterop.BindDelegate(name, fn, asFuture);
+        var (native, decl) = Interop.HostInterop.BindDelegate(State, name, fn, asFuture, _unitDimensionResolver);
         Value val = Value.FromFunction(native);
         State.Globals.SetStr(name, val);
         if (threadSafe)
@@ -216,7 +231,7 @@ public sealed partial class ScriptEngine
     /// </summary>
     public void Expose(string name, object target)
     {
-        var (hostObj, decl) = Interop.HostInterop.BindObject(State, name, target);
+        var (hostObj, decl) = Interop.HostInterop.BindObject(State, name, target, _unitDimensionResolver);
         State.Globals.SetStr(name, Value.FromUserdata(hostObj));
         AddHostDeclaration(decl, $"<host:{name}>", name);
     }
