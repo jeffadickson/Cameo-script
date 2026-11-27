@@ -39,14 +39,13 @@ public class CameoFutureDotTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public void Quoted_future_call_keeps_its_dialect_marker(bool check, bool compiled)
+    public void Direct_future_call_compiles_with_jit(bool check, bool compiled)
     {
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = check });
         JitLibrary.Enable(engine.Runtime);
         var values = engine.RunString("""
-            local macro wait!(task: Expression) return `$task.get()` end
-            return function(task: Future<integer>): integer return wait!(task) end,
-                Future.completedFuture(42)
+            fn wait(task: Future<integer>) -> integer { return task.get() }
+            return wait, Future.completedFuture(42)
             """);
         Value function = values[0];
         if (compiled)
@@ -63,40 +62,40 @@ public class CameoFutureDotTests
     public void Direct_future_dot_checked_and_unchecked(bool check)
     {
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = check });
-        var values = engine.RunString("local f = Future.completedFuture(42) return f.get(), f.isDone()");
+        var values = engine.RunString("let f = Future.completedFuture(42) return f.get(), f.isDone()");
         Assert.Equal(42, values[0].I);
         Assert.True(values[1].IsTruthy);
     }
 
     [Theory]
-    [InlineData("local f = Future.completedFuture(42) return f.get()", "42")]
-    [InlineData("local f = Future.parallel(function() return 42 end) return f.get()", "42")]
+    [InlineData("let f = Future.completedFuture(42) return f.get()", "42")]
+    [InlineData("let f = Future.parallel(() => 42) return f.get()", "42")]
     [InlineData("return Future.parallel(() => Future.completedFuture(42).get()).get()", "42")]
-    [InlineData("local a = Future.completedFuture(12) local b = Future.completedFuture(30) return a.thenCombine(b, function(x,y) return x+y end).get()", "42")]
-    [InlineData("local f = Future.completedFuture(42) local g = f.get return g(f), (f.get)(f), f['get'](f), f.get == Future.get", "42|42|42|true")]
-    [InlineData("local F = Future local f = F.completedFuture(42) return F.get(f), F.isDone(f)", "42|true")]
-    [InlineData("local f = Future.completedFuture(42) local other = Future.completedFuture(7) local ok=pcall(function() return f.get(other) end) return ok", "false")]
-    [InlineData("local t = { get = function(a,b) return a,b end } return t.get(12,30)", "12|30")]
-    [InlineData("local fake = {get = Future.get} local ok=pcall(function() return fake.get() end) return ok", "false")]
-    [InlineData("local f = Future.completedFuture(42) Future.get = function(x) return x end return f.get(17)", "17")]
-    [InlineData("local f=Future.completedFuture(42) Future.alias=Future.get return f.alias()", "42")]
-    [InlineData("local f=Future.completedFuture(0) Future.make=Future.completedFuture return f.make(42).get()", "42")]
-    [InlineData("local t = {f = function(...) return select('#', ...), ... end} local function many() return 12,30 end return t.f(many())", "2|12|30")]
-    [InlineData("local t = {f = function(...) return select('#', ...), ... end} local function none() end return t.f(17,none())", "1|17")]
-    [InlineData("local f = Future.completedFuture(42) local function none() end return f.get(none())", "42")]
-    [InlineData("local n = 0 local f = Future.completedFuture(42) local function receiver() n=n+1 return f end local function arg() n=n*10+2 return 0 end local x=receiver().get(arg()) return x,n", "42|12")]
-    [InlineData("local f = Future.delay(0,42) return f.get()", "42")]
-    [InlineData("local f = Future.failedFuture('oops') local value,err = f.await() return value,err.kind", "nil|failed")]
-    [InlineData("local f = Future.new() f.cancel() local value,err=f.await() return value,err.kind,f.isCancelled()", "nil|cancelled|true")]
-    [InlineData("local f = Future.new().orTimeout(0) local value,err=f.await() return value,err.kind", "nil|timeout")]
-    [InlineData("local f = Future.new().completeOnTimeout(42,0) return f.get()", "42")]
-    [InlineData("local f = Future.completedFuture(40).thenApply(function(x) return x+2 end) return f.get()", "42")]
-    [InlineData("local f = Future.delay(0,42) return pcall(function() return f.get() end)", "true|42")]
-    [InlineData("local f=Future.supplyAsync(function() return Future.delay(0,42).get() end) return f.get()", "42")]
-    [InlineData("local f=Future.failedFuture('bad').exceptionally(function(e) return 42 end) return f.get()", "42")]
-    [InlineData("local f=Future.completedFuture(40).thenCompose(function(x) return Future.completedFuture(x+2) end) return f.get()", "42")]
-    [InlineData("local f=Future.failedFuture('bad') local ok,err=pcall(function() return f.get() end) return ok,err.kind", "false|failed")]
-    [InlineData("local q=Query.from({12,30}) return q:sum(),json.decode('42')", "42|42|nil")]
+    [InlineData("let a = Future.completedFuture(12) let b = Future.completedFuture(30) return a.thenCombine(b, (x, y) => x + y).get()", "42")]
+    [InlineData("let f = Future.completedFuture(42) let g = f.get return g(f), (f.get)(f), f['get'](f), f.get == Future.get", "42|42|42|true")]
+    [InlineData("let F = Future let f = F.completedFuture(42) return F.get(f), F.isDone(f)", "42|true")]
+    [InlineData("let f = Future.completedFuture(42) let other = Future.completedFuture(7) let ok = pcall(() => f.get(other)) return ok", "false")]
+    [InlineData("fn pair(a, b) { return a, b } let t = { get = pair } return t.get(12, 30)", "12|30")]
+    [InlineData("let fake = {get = Future.get} let ok = pcall(() => fake.get()) return ok", "false")]
+    [InlineData("let f = Future.completedFuture(42) Future.get = (x) => x return f.get(17)", "17")]
+    [InlineData("let f = Future.completedFuture(42) Future.alias = Future.get return f.alias()", "42")]
+    [InlineData("let f = Future.completedFuture(0) Future.make = Future.completedFuture return f.make(42).get()", "42")]
+    [InlineData("fn countArgs(...) { return select('#', ...), ... } let t = {f = countArgs} fn many() { return 12, 30 } return t.f(many())", "2|12|30")]
+    [InlineData("fn countArgs(...) { return select('#', ...), ... } let t = {f = countArgs} fn none() { } return t.f(17, none())", "1|17")]
+    [InlineData("let f = Future.completedFuture(42) fn none() { } return f.get(none())", "42")]
+    [InlineData("var n = 0 let f = Future.completedFuture(42) fn receiver() { n = n + 1 return f } fn arg() { n = n * 10 + 2 return 0 } let x = receiver().get(arg()) return x, n", "42|12")]
+    [InlineData("let f = Future.delay(0, 42) return f.get()", "42")]
+    [InlineData("let f = Future.failedFuture('oops') let value, err = f.await() return value, err.kind", "nil|failed")]
+    [InlineData("let f = Future.new() f.cancel() let value, err = f.await() return value, err.kind, f.isCancelled()", "nil|cancelled|true")]
+    [InlineData("let f = Future.new().orTimeout(0) let value, err = f.await() return value, err.kind", "nil|timeout")]
+    [InlineData("let f = Future.new().completeOnTimeout(42, 0) return f.get()", "42")]
+    [InlineData("let f = Future.completedFuture(40).thenApply((x) => x + 2) return f.get()", "42")]
+    [InlineData("let f = Future.delay(0, 42) return pcall(() => f.get())", "true|42")]
+    [InlineData("let f = Future.supplyAsync(() => Future.delay(0, 42).get()) return f.get()", "42")]
+    [InlineData("let f = Future.failedFuture('bad').exceptionally((e) => 42) return f.get()", "42")]
+    [InlineData("let f = Future.completedFuture(40).thenCompose((x) => Future.completedFuture(x + 2)) return f.get()", "42")]
+    [InlineData("let f = Future.failedFuture('bad') let ok, err = pcall(() => f.get()) return ok, err.kind", "false|failed")]
+    [InlineData("let q = Query.from({12, 30}) return q:sum(), json.decode('42')", "42|42|nil")]
     public void Source_contracts(string source, string expected)
     {
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = false });
@@ -119,7 +118,7 @@ public class CameoFutureDotTests
     {
         using var engine=new CameoEngine(new CameoRuntimeOptions {TypeCheck=false});
         engine.State.Register(engine.State.GetGlobal("Future").AsTable,"get",static (ref CallContext c)=>c.Return(c.Count,c[0]));
-        var values=engine.RunString("local f=Future.completedFuture(42) return f.get(17)");
+        var values=engine.RunString("let f = Future.completedFuture(42) return f.get(17)");
         Assert.Equal(1,values[0].I);
         Assert.Equal(17,values[1].I);
     }
@@ -128,29 +127,29 @@ public class CameoFutureDotTests
     public void Ordinary_lookup_runs_once_and_keeps_registered_identity()
     {
         using var engine=new CameoEngine(new CameoRuntimeOptions {TypeCheck=false});
-        var values=engine.RunString("local n=0 local get=Future.get local f=Future.completedFuture(42) debug.getmetatable(f).__index=function(obj,key) n=n+1 return get end local x=f.get() return x,n,f.get==get");
+        var values=engine.RunString("var n = 0 let get = Future.get let f = Future.completedFuture(42) debug.getmetatable(f).__index = (obj, key) => { n = n + 1 return get } let x = f.get() return x, n, f.get == get");
         Assert.Equal(42,values[0].I);
         Assert.Equal(1,values[1].I);
         Assert.True(values[2].IsTruthy);
     }
 
     [Theory]
-    [InlineData("function f(x) return x.get() end", "f(Future.completedFuture(42))", "42")]
-    [InlineData("function f(x) local n=x.get() return n+1 end", "f(Future.completedFuture(41))", "42")]
-    [InlineData("function f(t) return t.f(12,30) end", "f({f=function(a,b) return a+b end})", "42")]
-    [InlineData("function f(t) return t.f(many()) end function many() return 12,30 end", "f({f=function(a,b) return a+b end})", "42")]
-    [InlineData("function f(t) return t.f(42,none()) end function none() end", "f({f=function(...) return select('#',...),... end})", "1|42")]
-    [InlineData("function f(x) return x.get(none()) end function none() end", "f(Future.completedFuture(42))", "42")]
-    [InlineData("function f(t) local x=1 local y=2 t.f(x,y) return x+y end", "f({f=function(a,b) assert(a==1 and b==2) end})", "3")]
-    [InlineData("function f(x,y,cb) return x.thenCombine(y,cb).get() end", "f(Future.completedFuture(12),Future.completedFuture(30),function(a,b) return a+b end)", "42")]
-    [InlineData("function f(n,x) if n==0 then return x.get() end return f(n-1,x) end", "f(200,Future.completedFuture(42))", "42")]
+    [InlineData("fn f(x) { return x.get() }", "f(Future.completedFuture(42))", "42")]
+    [InlineData("fn f(x) { let n = x.get() return n + 1 }", "f(Future.completedFuture(41))", "42")]
+    [InlineData("fn f(t) { return t.f(12, 30) }", "f({f = (a, b) => a + b})", "42")]
+    [InlineData("fn many() { return 12, 30 } fn f(t) { return t.f(many()) }", "f({f = (a, b) => a + b})", "42")]
+    [InlineData("fn none() { } fn countArgs(...) { return select('#', ...), ... } fn f(t) { return t.f(42, none()) }", "f({f = countArgs})", "1|42")]
+    [InlineData("fn none() { } fn f(x) { return x.get(none()) }", "f(Future.completedFuture(42))", "42")]
+    [InlineData("fn f(t) { let x = 1 let y = 2 t.f(x, y) return x + y }", "f({f = (a, b) => { assert(a == 1 && b == 2) }})", "3")]
+    [InlineData("fn f(x, y, cb) { return x.thenCombine(y, cb).get() }", "f(Future.completedFuture(12), Future.completedFuture(30), (a, b) => a + b)", "42")]
+    [InlineData("fn f(n, x) { if n == 0 { return x.get() } return f(n - 1, x) }", "f(200, Future.completedFuture(42))", "42")]
     public void Interpreted_and_real_IL_agree(string definition, string invocation, string expected)
     {
         foreach (bool compiled in new[] {false,true})
         {
             using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = false });
             JitLibrary.Enable(engine.Runtime);
-            var values = engine.RunString(definition + (compiled ? " f=assert(jit.compile(f)) " : " ") + "return " + invocation);
+            var values = engine.RunString(definition + (compiled ? " f = assert(jit.compile(f)) " : " ") + "return " + invocation);
             Assert.Equal(expected,string.Join('|',values.Select(v=>v.ToString())));
         }
     }

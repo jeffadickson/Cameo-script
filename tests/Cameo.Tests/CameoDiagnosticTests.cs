@@ -9,15 +9,14 @@ namespace Cameo.Tests;
 public class CameoDiagnosticTests
 {
     [Theory]
-    [InlineData("local f = (name) => name", "CAMEO001", "name: <concrete type>")]
-    [InlineData("local f = (name: any) => name", "CAMEO001", "name: <concrete type>")]
-    [InlineData("local function pair(): integer, string return 1,'failure' end local f = () => pair()", "CAMEO002", "select or forward")]
-    [InlineData("global raw: function local f = () => raw()", "CAMEO002", "known, fixed single result")]
-    [InlineData("local f = () => (1 as integer)", "CAMEO004", "return expression as Type")]
-    [InlineData("local f = (name: integer, name: integer) => name", "CAMEO005", "rename or remove")]
-    [InlineData("local f = (...) => 1", "CAMEO005", "function(...)")]
-    [InlineData("local macro id!(x: Expression) return `$x` end local f = () => 1 return id!(f())", "CAMEO003", "all expression functions")]
-    [InlineData("local f = () => 1 local record R where self.n > 0 n: integer end", "CAMEO003", "all expression functions")]
+    [InlineData("let f = (name) => name", "CAMEO001", "name: <concrete type>")]
+    [InlineData("let f = (name: any) => name", "CAMEO001", "name: <concrete type>")]
+    [InlineData("fn pair() -> (integer, string) { return 1, 'failure' } let f = () => pair()", "CAMEO002", "select or forward")]
+    [InlineData("global raw: function let f = () => raw()", "CAMEO002", "known, fixed single result")]
+    [InlineData("let f = () => (1 as integer)", "CAMEO004", "return expression as Type")]
+    [InlineData("let f = (name: integer, name: integer) => name", "CAMEO005", "rename or remove")]
+    [InlineData("let f = (...) => 1", "CAMEO005", "function(...)")]
+    [InlineData("let f = () => 1 record R where self.n > 0 { n: integer }", "CAMEO003", "all expression functions")]
     public void Rejected_forms_keep_ids_and_offer_specific_repairs(string source, string code, string repair)
     {
         using var cameo = new CameoEngine();
@@ -30,14 +29,13 @@ public class CameoDiagnosticTests
     }
 
     [Theory]
-    [InlineData("local f = (name: integer) => name return f(42)", "local function f(name: integer): integer return name end return f(42)")]
-    [InlineData("local function apply(f: function(integer): integer): integer return f(42) end return apply((name) => name)", "local function apply(f: function(integer): integer): integer return f(42) end return apply(function(name: integer): integer return name end)")]
-    [InlineData("local function f(): integer return 42 as integer end return f()", "local function f(): integer return 42 as integer end return f()")]
-    [InlineData("local function f(...: integer): integer return ... end return f(42)", "local function f(...: integer): integer return ... end return f(42)")]
-    [InlineData("local function pair(): integer, string return 42,'issue' end local function f(): integer, string return pair() end return f()", "local function pair(): integer, string return 42,'issue' end local function f(): integer, string return pair() end return f()")]
-    [InlineData("local f = (left: integer, right: integer) => left + right return f(19,23)", "local function f(left: integer,right: integer): integer return left + right end return f(19,23)")]
-    [InlineData("local macro id!(x: Expression) return `$x` end local function f(): integer return 42 end return id!(f())", "local macro id!(x: Expression) return `$x` end local function f(): integer return 42 end return id!(f())")]
-    [InlineData("local function f(): integer return 42 end local record R where self.n > 0 n: integer end return f()", "local function f(): integer return 42 end local record R where self.n > 0 n: integer end return f()")]
+    [InlineData("let f = (name: integer) => name return f(42)", "local function f(name: integer): integer return name end return f(42)")]
+    [InlineData("fn apply(f: fn(integer) -> integer) -> integer { return f(42) } return apply((name) => name)", "local function apply(f: function(integer): integer): integer return f(42) end return apply(function(name: integer): integer return name end)")]
+    [InlineData("fn f() -> integer { return 42 as integer } return f()", "local function f(): integer return 42 as integer end return f()")]
+    [InlineData("fn f(...: integer) -> integer { return ... } return f(42)", "local function f(...: integer): integer return ... end return f(42)")]
+    [InlineData("fn pair() -> (integer, string) { return 42, 'issue' } fn f() -> (integer, string) { return pair() } return f()", "local function pair(): integer, string return 42,'issue' end local function f(): integer, string return pair() end return f()")]
+    [InlineData("let f = (left: integer, right: integer) => left + right return f(19, 23)", "local function f(left: integer,right: integer): integer return left + right end return f(19,23)")]
+    [InlineData("fn f() -> integer { return 42 } record R where self.n > 0 { n: integer } return f()", "local function f(): integer return 42 end local record R where self.n > 0 n: integer end return f()")]
     public void Repaired_forms_execute_in_their_supported_modes(string cameoSource, string tealSource)
     {
         using var cameo = new CameoEngine();
@@ -54,7 +52,7 @@ public class CameoDiagnosticTests
         Gen.Int[0, 10000].Sample(index =>
         {
             string name = $"parameter{index}";
-            var errors = cameo.Check($"local f = ({name}) => {name}", "names.cameo");
+            var errors = cameo.Check($"let f = ({name}) => {name}", "names.cameo");
             var error = Assert.Single(errors, d => d.Message.Contains("CAMEO001", StringComparison.Ordinal));
             Assert.Contains($"{name}: <concrete type>", error.Message, StringComparison.Ordinal);
         }, iter: 60, threads: 1, seed: Properties.Prop.Seeds.CsCheckSeed);

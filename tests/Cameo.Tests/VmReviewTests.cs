@@ -15,11 +15,11 @@ public class VmReviewTests
     public void Parse_failure_replaces_previous_check_warnings(bool cameo)
     {
         using var engine=new ScriptEngine(null,cameo?Cameo.CameoLanguage.Instance:CameoSourceLanguage.Instance);
-        Assert.Empty(engine.Check("local unused = 1","old.tl"));
-        Assert.Contains(engine.Warnings,d=>d.File=="old.tl");
-        Assert.NotEmpty(engine.Check("local =","new.tl"));
+        Assert.Empty(engine.Check(cameo?"let unused = 1":"local unused = 1",cameo?"old.cameo":"old.tl"));
+        Assert.Contains(engine.Warnings,d=>d.File==(cameo?"old.cameo":"old.tl"));
+        Assert.NotEmpty(engine.Check(cameo?"let =":"local =",cameo?"new.cameo":"new.tl"));
         Assert.Empty(engine.Warnings);
-        Assert.Empty(engine.Check("return 42","valid.tl"));
+        Assert.Empty(engine.Check("return 42",cameo?"valid.cameo":"valid.tl"));
         Assert.Empty(engine.Warnings);
     }
 

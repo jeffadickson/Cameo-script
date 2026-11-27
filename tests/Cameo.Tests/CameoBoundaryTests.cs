@@ -16,7 +16,7 @@ public class CameoBoundaryTests
         files.Write("arrowdecl.d.tl","local f = (n: integer) => n * 2 return f");
         files.Write("arrowdecl.lua","return function(n) return n * 2 end");
         using var cameo=new CameoEngine(files.Options());
-        Assert.Equal(42,cameo.RunString("local m = require('typed') return m.twice(21)")[0].I);
+        Assert.Equal(42,cameo.RunString("let m = require('typed') return m.twice(21)")[0].I);
         Assert.IsType<CompileFailed>(cameo.TryRunString("return require('arrowdecl')(21)").Value);
     }
 
@@ -24,7 +24,7 @@ public class CameoBoundaryTests
     public void Malformed_import_is_a_check_error_in_both_front_ends()
     {
         using var files=new ModuleFiles();
-        files.Write("bad.cameo","local f = () =>");
+        files.Write("bad.cameo","let f = () =>");
         files.Write("bad.tl","local f = function(");
         using var cameo=new CameoEngine(files.Options());
         using var teal=new ScriptEngine(files.Options());
@@ -71,17 +71,18 @@ public class CameoBoundaryTests
         using var files = new ModuleFiles();
         files.Write("work.cameo","return (n: integer) => n + 2");
         using var cameo = new CameoEngine(files.Options());
-        Assert.Equal(42,cameo.RunString("return Future.parallel(function(): integer return require('work')(40) end):get()")[0].I);
+        Assert.Equal(42,cameo.RunString("return Future.parallel(() -> integer => { return require('work')(40) }).get()")[0].I);
     }
 
     [Fact]
     public void Dynamic_load_follows_the_owning_language_but_is_unchecked()
     {
-        const string source="local f,e = load('return ((x: integer) => x + 2)(40)') if f == nil then error(e) end return f()";
+        const string cameoSource="let f, e = load('return ((x: integer) => x + 2)(40)') if f == nil { error(e) } return f()";
+        const string tealSource="local f, e = load('return ((x: integer) => x + 2)(40)') if f == nil then error(e) end return f()";
         using var cameo = new CameoEngine();
         using var teal = new ScriptEngine();
-        Assert.Equal(42,cameo.RunString(source)[0].I);
-        Assert.False(teal.TryRunString(source).Value is RunCompleted);
+        Assert.Equal(42,cameo.RunString(cameoSource)[0].I);
+        Assert.False(teal.TryRunString(tealSource).Value is RunCompleted);
     }
 
     [Fact]
@@ -97,8 +98,8 @@ public class CameoBoundaryTests
     public void Newline_and_diagnostic_location_are_not_source_text_rewriting()
     {
         using var cameo = new CameoEngine();
-        var errors=cameo.Check("-- first\r\nlocal f = (x) => x", "location.cameo");
-        Assert.Contains(errors,d=>d.Line==2 && d.Col==12 && d.Message.Contains("CAMEO001"));
+        var errors=cameo.Check("// first\r\nlet f = (x) => x", "location.cameo");
+        Assert.Contains(errors,d=>d.Line==2 && d.Col==10 && d.Message.Contains("CAMEO001"));
     }
 
     private sealed class ModuleFiles : IDisposable

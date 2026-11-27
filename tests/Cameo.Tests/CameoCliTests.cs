@@ -20,7 +20,7 @@ public class CameoCliTests
     public async Task Malformed_import_never_certifies_a_successful_check()
     {
         using var file=new SourceFile("return require('bad')");
-        File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(file.Path)!,"bad.cameo"),"local f = () =>");
+        File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(file.Path)!,"bad.cameo"),"let f = () =>");
         var result=await Invoke("check","--json",file.Path);
         Assert.Equal(1,result.Code);
         using var json=JsonDocument.Parse(result.Out);
@@ -30,7 +30,7 @@ public class CameoCliTests
     [Fact]
     public async Task Run_and_check_use_cameo_syntax()
     {
-        using var file=new SourceFile("local f = (n: integer) => n * 2 print(f(21))");
+        using var file=new SourceFile("let f = (n: integer) => n * 2 print(f(21))");
         var check=await Invoke("check","--json",file.Path);
         Assert.Equal(0,check.Code);
         using var json=JsonDocument.Parse(check.Out);
@@ -43,7 +43,7 @@ public class CameoCliTests
     [Fact]
     public async Task Compile_diagnostics_are_structured_and_preserve_unicode_paths()
     {
-        using var file=new SourceFile("local f = (x) => x", "héllo.cameo");
+        using var file=new SourceFile("let f = (x) => x", "héllo.cameo");
         var check=await Invoke("check","--json",file.Path);
         Assert.Equal(1,check.Code);
         using var json=JsonDocument.Parse(check.Out);
@@ -68,7 +68,7 @@ public class CameoCliTests
     [Fact]
     public async Task Timeout_terminates_a_running_script()
     {
-        using var file=new SourceFile("while true do end");
+        using var file=new SourceFile("while true { }");
         var result=await Invoke("run","--timeout","0.02",file.Path);
         Assert.Equal(124,result.Code);
         Assert.Contains("Timeout",result.Err);

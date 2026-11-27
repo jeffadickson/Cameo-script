@@ -265,7 +265,7 @@ public sealed class CameoMatchAndModulesTests
 
                 let b: Measurable = Box { w = 3.0, h = 4.0 }
                 let k: Kind = "box"
-                let frozen = isFrozen(DEFAULTS) and isFrozen(DEFAULTS.tags)
+                let frozen = isFrozen(DEFAULTS) && isFrozen(DEFAULTS.tags)
                 let okMut, err = pcall(() => { DEFAULTS.scale = 99 })
                 return fmt(k, b), geom.DEFAULTS.scale, frozen, okMut, tostring(err)
                 """);

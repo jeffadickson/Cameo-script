@@ -1,4 +1,4 @@
--- Named functions bind locally before their bodies, so recursion needs no global.
+// Named functions bind locally before their bodies, so recursion needs no global.
 fn factorial(n: integer) -> integer {
     if n <= 1 {
         return 1
@@ -16,7 +16,7 @@ fn countBatch(size: integer) -> integer {
     return processed
 }
 
--- A lexical block keeps scratch data local; the captured counter remains shared.
+// A lexical block keeps scratch data local; the captured counter remains shared.
 do {
     var checksum = 0
     for value = 1, 4 {
@@ -24,5 +24,5 @@ do {
     }
     print($"factorial checksum: {checksum}")
 }
-print($"first batch: {countBatch(3)}")
-print($"second batch: {countBatch(2)}")
+    print($"first batch: {countBatch(3)}")
+    print($"second batch: {countBatch(2)}")

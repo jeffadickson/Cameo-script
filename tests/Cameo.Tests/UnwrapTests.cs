@@ -19,7 +19,16 @@ public class UnwrapTests
     public void Checked_generic_inference_and_final_call_expansion(bool cameo)
     {
         using var e = Engine(cameo);
-        var r = e.RunString("""
+        var r = e.RunString(cameo ? """
+            fn pair() -> (integer, string) { return 42, nil }
+            fn number(n: integer) -> integer { return n + 1 }
+            let n = unwrap(pair())
+            let s = unwrap('text')
+            let b = unwrap(false, nil, 'ignored')
+            fn text(s: string) -> string { return s }
+            fn boolean(b: boolean) -> boolean { return b }
+            return number(unwrap(unwrap(pair()))), text(s), boolean(b), select('#', unwrap(nil))
+            """ : """
             local function pair(): integer, string return 42,nil end
             local function number(n: integer): integer return n + 1 end
             local n = unwrap(pair())
@@ -43,7 +52,11 @@ public class UnwrapTests
     public void Truncating_a_call_discards_its_issue_and_extra_results_are_ignored(bool cameo, bool check)
     {
         using var e = Engine(cameo, check);
-        var r = e.RunString("""
+        var r = e.RunString(cameo ? """
+            fn pair() -> (integer, string) { return 7, 'issue' }
+            let ok, issue = pcall(() -> integer => { return unwrap(pair()) })
+            return ok, issue, unwrap((pair())), unwrap(pair(), nil), unwrap(8, nil, 'ignored'), select('#', unwrap(9, nil, 10))
+            """ : """
             local function pair(): integer, string return 7,'issue' end
             local ok, issue = pcall(function(): integer return unwrap(pair()) end)
             return ok, issue, unwrap((pair())), unwrap(pair(), nil), unwrap(8,nil,'ignored'), select('#',unwrap(9,nil,10))
@@ -65,13 +78,19 @@ public class UnwrapTests
         var table = new Table();
         Value issue = Value.FromTable(table);
         e.State.Globals.SetStr("issue", issue);
-        var ex = Assert.Throws<LuaException>(() => e.RunString("local function fail() local x = unwrap(1,issue) return x end return fail()", "unwrap-trace"));
+        string failSrc = cameo
+            ? "fn fail() { let x = unwrap(1, issue) return x } return fail()"
+            : "local function fail() local x = unwrap(1,issue) return x end return fail()";
+        var ex = Assert.Throws<LuaException>(() => e.RunString(failSrc, "unwrap-trace"));
         Assert.Same(table, ex.Value.O);
         Assert.Contains("unwrap-trace", ex.Traceback);
         string bytes = "\0\u0080\u00ff";
         e.State.Globals.SetStr("issue", Value.FromString(bytes));
         Assert.Equal(bytes, Assert.Throws<LuaException>(() => e.RunString("return unwrap(nil,issue)")).Value.AsString);
-        var r = e.RunString("local t = {} return rawequal(t,unwrap(t)), unwrap(nil), unwrap(false), unwrap(17)");
+        string tblSrc = cameo
+            ? "let t = {} return rawequal(t, unwrap(t)), unwrap(nil), unwrap(false), unwrap(17)"
+            : "local t = {} return rawequal(t,unwrap(t)), unwrap(nil), unwrap(false), unwrap(17)";
+        var r = e.RunString(tblSrc);
         Assert.True(r[0].IsTruthy);
         Assert.True(r[1].IsNil);
         Assert.False(r[2].IsTruthy);
@@ -79,7 +98,10 @@ public class UnwrapTests
         Assert.False(Assert.Throws<LuaException>(() => e.RunString("return unwrap(1,false)")).Value.IsTruthy);
         Assert.Contains("value expected", Assert.Throws<LuaException>(() => e.RunString("return unwrap()")).Message);
         // pcall uses status/value rather than value/issue: it is deliberately incompatible.
-        Assert.Equal("answer", Assert.Throws<LuaException>(() => e.RunString("return unwrap(pcall(function() return 'answer' end))")).Value.AsString);
+        string pcallSrc = cameo
+            ? "return unwrap(pcall(() => 'answer'))"
+            : "return unwrap(pcall(function() return 'answer' end))";
+        Assert.Equal("answer", Assert.Throws<LuaException>(() => e.RunString(pcallSrc)).Value.AsString);
     }
 
     [Theory]

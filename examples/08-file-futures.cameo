@@ -1,5 +1,5 @@
--- Files are deterministic fixtures. Future continuations run on the owning VM.
-let root = arg[1] or "examples/fixtures"
+// Files are deterministic fixtures. Future continuations run on the owning VM.
+let root = arg[1] || "examples/fixtures"
 fn normalize(text: string) -> string {
     return text.match("^%s*(.-)%s*$")
 }
@@ -16,7 +16,7 @@ let contents = aio.readFile(root .. "/digest.txt").get()
 print(release)
 print($"sha256: {crypto.sha256(contents)}")
 
--- A callback that invokes get is explicitly bound; extracting a method is not binding.
+// A callback that invokes get is explicitly bound; extracting a method is not binding.
 let completed = Future.completedFuture(7)
 let fetch = () => completed.get()
 print($"bound callback: {fetch()}")

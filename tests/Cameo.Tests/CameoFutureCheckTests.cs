@@ -6,12 +6,12 @@ namespace Cameo.Tests;
 public class CameoFutureCheckTests
 {
     [Theory]
-    [InlineData("local result: integer = Future.completedFuture(21).thenApply((n) => n * 2).get()")]
-    [InlineData("local job = Future.completedFuture(21) local result: integer = job.thenApply((n) => n * 2).get()")]
-    [InlineData("local F = Future local job = F.completedFuture(42) local result: integer = F.get(job)")]
-    [InlineData("local job = Future.completedFuture(42) local f = job.get local result: integer = f(job)")]
-    [InlineData("local job = Future.completedFuture(42) local result: integer = (job.get)(job)")]
-    [InlineData("local a = Future.completedFuture(20) local b = Future.completedFuture(22) local result: integer = a.thenCombine(b, (x, y) => x + y).get()")]
+    [InlineData("let result: integer = Future.completedFuture(21).thenApply((n) => n * 2).get()")]
+    [InlineData("let job = Future.completedFuture(21) let result: integer = job.thenApply((n) => n * 2).get()")]
+    [InlineData("let F = Future let job = F.completedFuture(42) let result: integer = F.get(job)")]
+    [InlineData("let job = Future.completedFuture(42) let f = job.get let result: integer = f(job)")]
+    [InlineData("let job = Future.completedFuture(42) let result: integer = (job.get)(job)")]
+    [InlineData("let a = Future.completedFuture(20) let b = Future.completedFuture(22) let result: integer = a.thenCombine(b, (x, y) => x + y).get()")]
     public void Instance_methods_and_explicit_static_aliases_check(string source)
     {
         using var e = new CameoEngine(); Assert.Empty(e.Check(source));
@@ -20,7 +20,7 @@ public class CameoFutureCheckTests
     public void Counterfeit_future_does_not_gain_implicit_self()
     {
         using var e = new CameoEngine();
-        Assert.NotEmpty(e.Check("local record Future get: function(self): integer end local fake: Future = {} local result = fake.get()"));
+        Assert.NotEmpty(e.Check("record Future { get: function(self): integer } let fake: Future = {} let result = fake.get()"));
     }
     [Theory]
     [InlineData("return job.get()", true)] [InlineData("return job.get 'x'", true)] [InlineData("return job.get {}", true)]

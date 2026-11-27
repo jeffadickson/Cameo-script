@@ -129,7 +129,9 @@ public static partial class CameoCommands
                 continue;
             }
             string original = File.ReadAllText(path);
-            CameoFormatOutcome outcome = CameoFormatter.TryFormat(original, path);
+            CameoFormatOutcome outcome = fmt.Migrate
+                ? CameoFormatter.TryMigrate(original, path)
+                : CameoFormatter.TryFormat(original, path);
             if (outcome.Diagnostic != null)
             {
                 diagnostics.Add(outcome.Diagnostic);
@@ -376,29 +378,29 @@ public static partial class CameoCommands
     {
         static string Lit(string s) => "\"" + string.Concat(LuaText.Encode(s).Select(ch => "\\" + ((int)ch).ToString("D3"))) + "\"";
         var src = new System.Text.StringBuilder();
-        src.Append("local __files = {...}\n");
+        src.Append("var __files = {...}\n");
         if (eval.BeginCode != null) src.Append(eval.BeginCode).Append('\n');
         src.Append("var nr = 0\n");
         src.Append("if #__files == 0 { __files = {false} }\n");
         src.Append("for _, __file in ipairs(__files) {\n");
-        src.Append("let filename = __file or '-'\n");
+        src.Append("let filename = __file || '-'\n");
         if (eval.InPlace)
         {
             src.Append("let __out = {}\n");
-            src.Append("local function print(...) local t = table.pack(...) for i = 1, t.n { t[i] = tostring(t[i]) } __out[#__out + 1] = table.concat(t, '\\t') end\n");
+            src.Append("fn print(...) { let t = table.pack(...) for i = 1, t.n { t[i] = tostring(t[i]) } __out[#__out + 1] = table.concat(t, '\\t') }\n");
         }
-        src.Append("for line in (__file and io.lines(__file) or io.lines()) {\n");
+        src.Append("for line in (__file && io.lines(__file) || io.lines()) {\n");
         src.Append("nr += 1\n");
         if (eval.AutoSplit)
             src.Append("let fields = line.split(").Append(eval.FieldSeparator == null ? "" : Lit(eval.FieldSeparator)).Append(")\n");
-        src.Append("repeat\n").Append(eval.Code).Append("\nuntil true\n");
+        src.Append("for __once = 1, 1 {\n").Append(eval.Code).Append("\n}\n");
         if (eval.PrintLines) src.Append("if line != nil { print(line) }\n");
         src.Append("}\n");
         if (eval.InPlace)
         {
             if (eval.BackupSuffix != null)
                 src.Append("assert(fs.copy(filename, filename .. ").Append(Lit(eval.BackupSuffix)).Append(", true))\n");
-            src.Append("assert(fs.write(filename, table.concat(__out, '\\n') .. (#__out > 0 and '\\n' or '')))\n");
+            src.Append("assert(fs.write(filename, table.concat(__out, '\\n') .. (#__out > 0 && '\\n' || '')))\n");
         }
         src.Append("}\n");
         if (eval.EndCode != null) src.Append(eval.EndCode).Append('\n');

@@ -26,10 +26,21 @@ print(job.get())
 Named `fn` functions are local and recursive, using the existing function checker.
 Initialized `var` bindings permit reassignment; `let` prevents it. Both `let` and `var`
 support table destructuring (`let { a, b = alias } = t`) and array destructuring
-(`var [x, _, z] = xs`). `record Name`, `interface Name`, `enum Name`, and `if`/`else`,
-`while`, `for`, and `do` can use braces. Legacy forms remain valid. Return annotations use
-adjacent `->`; no global function hoisting, automatic semicolon insertion, or formatter is
-implied.
+(`var [x, _, z] = xs`). Control flow (`if`/`else if`/`else`, `while`, `for`, `do`) and
+declarations (`fn`, `record`, `interface`, `enum`) use pure brace syntax (`{ ... }`), while
+Teal (`.tl`) retains full Lua/Teal syntax. Return annotations use adjacent `->`, and function
+types accept both `fn(T) -> R` and `function(T): R`.
+
+Cameo uses C/Rust/SystemVerilog-coherent comments and operators:
+- Comments: `//` line comments and nestable `/* ... */` block comments (`//#pragma` for pragmas).
+- Logical & comparison: `!`, `&&`, `||`, `!=`, `==`, `<`, `<=`, `>`, `>=`, `=~`, `!~`.
+- Bitwise & math: unary `~` (bitwise NOT), `^` / `^=` (bitwise XOR), `&` / `&=`, `|` / `|=`,
+  `<<` / `>>`, `**` / `**=` (exponentiation, right-associative, tighter than unary `-`),
+  `~/` / `~/=` (floor/integer division, backing `__idiv`), and `/` (floating-point division).
+  Bitwise operators bind tighter than comparisons (`flags & MASK == 0`).
+- Multi-line raw strings use `"""..."""` and interpolated `$"""..."""`, freeing `[[1, 2], [3, 4]]`
+  for nested list literals without extra spaces.
+- Type aliases can be declared directly with `type Name = ...` and `export type Name = ...`.
 
 Cameo adds:
 - **Interfaces and inline record methods**: braced `interface Name [extends|is Base] { ... }`
@@ -43,8 +54,8 @@ Cameo adds:
   via unified `.` calls (`g.greet("world")`) with zero `PrepareDotCall` overhead when
   checked (keeping `:` working for compatibility). See `examples/15-interfaces.cameo`.
 - Perl-style regex literals `/pattern/flags` with match operators `=~` and `!~`.
-- Null-coalescing `a ?? b` (falls back only on `nil`, preserving `false`) and optional
-  chaining `x?.field`, `x?.[k]`, `x?.method(args)`, and `x?.(args)`.
+- Null-coalescing `a ?? b` (right-associative, falls back only on `nil`, preserving `false`)
+  and optional chaining `x?.field`, `x?.[k]`, `x?.method(args)`, and `x?.(args)`.
 - Block-body arrow functions `(x) => { ... }` and `(x) -> T => { ... }` (while keeping
   single-expression table-literal arrows `(x) => { a = x }`).
 - Expression-position `try`/`catch` (`return try expr`, `f(try expr)`) and multi-statement
@@ -55,16 +66,14 @@ repairs and error handling. Prefer named business functions and one pipeline sta
 line. Shared `unwrap(value, issue)` raises the original companion error when non-nil,
 preserving false/nil successes; `Future.get()` supplies the future equivalent.
 Use these where failure should abort, and explicit railway handling where recovery occurs.
-Initialized `let` bindings and direct future calls such as `job.get()` now form part of
+Initialized `let` bindings and direct future calls such as `job.get()` form part of
 Cameo's source surface. `let` prevents reassignment, including in no-check compilation;
-objects it refers to can still change. Use `var` for initialized mutable bindings,
-or `local` for legacy/uninitialized bindings.
-This does not supply a formatter or the broader proposed type-system features.
+objects it refers to can still change. Use `var` for initialized mutable bindings.
 
-```lua
+```cameo
 let job = Future.parallel(() => 21 * 2)
 let answer = job.get()
-print(answer) -- 42
+print(answer) // 42
 ```
 
 Direct dot calls automatically supply their receiver across built-in instance types:
@@ -76,14 +85,14 @@ both module calls and known built-in instance calls compile directly with no `Pr
 instruction. Existing colon calls remain valid. Extracted/parenthesized/bracket methods remain
 unbound (`let getter = job.get` is called as `getter(job)`).
 
-Cameo also supports `!=` as an alias for `~=` and the left-associative pipeline operator `|>`:
+Cameo supports the left-associative pipeline operator `|>`:
 
-```text
+```cameo
 let doubled = Query.from({1, 2, 3})
     .where((n) => n > 1)
     .select((n) => n * 2)
     .toList()
-print(table.concat(doubled, ", ")) -- 4, 6
+print(table.concat(doubled, ", ")) // 4, 6
 
 let banner = "  cameo  " |> string.trim |> string.upper
 ```
@@ -93,8 +102,7 @@ An expression function has parenthesized parameters, optional `-> ReturnType`, a
 concrete annotations or an expected function type, as Query supplies above.
 `(n: integer) => n * 2` works without context. `() => 42`, captures, nested arrows and
 immediate calls also work. The return type is inferred when omitted, including literal
-precision needed by enum callbacks. Ordinary `function ... end` declarations retain their
-existing return rules.
+precision needed by enum callbacks. Named `fn` declarations use explicit return rules.
 
 The first version deliberately rejects:
 
@@ -160,8 +168,8 @@ and transfer cleanly across workers. List comprehensions `[expr for x in xs [if 
 and `[expr for k, v in dict [if cond]]` construct typed `List<T>` values; direct
 `for x in collection` and `for k, v in dict` iterate `List`, `Dict`, arrays, maps,
 `FloatArray`, and `Query` without `ipairs`/`pairs` (which continue to work unchanged).
-Because `[[...]]` remains Lua's long-string delimiter, write a space between opening
-brackets for immediately nested lists (`[ [1, 2], [3, 4] ]`).
+Because multi-line strings use `"""..."""`, nested list literals such as `[[1, 2], [3, 4]]`
+parse directly with no spaces required.
 
 `freeze(v)` deeply and cycle-safely freezes `Table`, `List`, and `Dict` graphs, rejecting
 subsequent mutations (`set`, `push`, `sort`, `setmetatable`, etc.), and `isFrozen(v)`
@@ -181,7 +189,7 @@ record literals; mark optional fields with `field?: T` (which becomes `T | nil` 
 be omitted).
 
 Modules can declare top-level `export fn`, `export let`, `export var`, `export record`,
-`export interface`, and `export enum`, and consumers can import them with
+`export interface`, `export enum`, and `export type`, and consumers can import them with
 `import { a, b as c } from "mod"` or `import mod from "mod"`. Pure type exports
 (`interface`, `enum`) bind types without runtime lookups, while `record` exports bind
 both the runtime constructor/methods and the static type. In `--hermetic` mode, imported
@@ -219,13 +227,15 @@ under `--hermetic`. Non-sandboxed/non-hermetic `CameoEngine` and `cameo` CLI als
 
 ### Canonical formatter (`cameo fmt`) and VS Code syntax highlighting
 
-`cameo fmt [--check] <file.cameo>...` formats Cameo source files into canonical 4-space
-indentation, LF line endings, trimmed trailing whitespace, and collapsed blank lines while
-preserving comments, regex literals, interpolated strings, and multi-line strings verbatim
-and validating syntax before writing. `--check` leaves files untouched and exits `1` if any
-file needs formatting. The VS Code extension (`editors/vscode/`) ships a dedicated Cameo
-TextMate grammar (`syntaxes/cameo.tmLanguage.json`, scope `source.cameo`) alongside
-save-time Cameo diagnostics.
+`cameo fmt [--check] [--migrate] <file.cameo>...` formats Cameo source files into canonical
+4-space indentation, LF line endings, trimmed trailing whitespace, and collapsed blank lines
+while preserving comments, regex literals, interpolated strings, and multi-line strings
+verbatim and validating syntax before writing. `--migrate` rewrites legacy Lua-surface syntax
+(`--` / `--[[...]]`, `not` / `and` / `or` / `~=`, `//` / `//=`, `^` / `^=`, binary `~`,
+`[[...]]` / `$[[...]]`, `elseif`) to clean Cameo syntax before formatting. `--check` leaves
+files untouched and exits `1` if any file needs formatting. The VS Code extension
+(`editors/vscode/`) ships a dedicated Cameo TextMate grammar (`syntaxes/cameo.tmLanguage.json`,
+scope `source.cameo`) alongside save-time Cameo diagnostics.
 
 Exit codes: 0 success, 1 compile/runtime/check/fmt-check failure, 2 usage or file-access
 exception, 124 timeout, 130 cancellation, 125 memory/step/other runtime abort. A missing

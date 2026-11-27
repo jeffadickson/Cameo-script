@@ -109,12 +109,29 @@ public sealed class Lexer
             t.Kind = TokenKind.Number;
             t.Text = ReadNumber();
         }
+        else if (_cameo && c == '-' && Peek() == '-')
+        {
+            throw Error("use '//' for line comments (or '/* ... */' for block comments) in Cameo; write '-(-x)' for double negation", t.Line, t.Col);
+        }
+        else if (_cameo && c == '$' && Peek() == '"' && Peek(2) == '"' && Peek(3) == '"')
+        {
+            // $""" ... {expr} ... """: interpolated raw multi-line string in Cameo
+            _pos++;
+            t.Kind = TokenKind.Interp;
+            t.Parts = ReadInterpolatedTripleQuote(t);
+        }
+        else if (_cameo && c == '"' && Peek() == '"' && Peek(2) == '"')
+        {
+            // """ ... """: raw multi-line string in Cameo (frees [[...]] for nested list literals)
+            t.Kind = TokenKind.String;
+            t.Text = ReadTripleQuotedString();
+        }
         else if (c == '"' || c == '\'')
         {
             t.Kind = TokenKind.String;
             t.Text = ReadString(c);
         }
-        else if (c == '$' && Peek() == '[' && LongBracketLevelAt(_pos + 1) >= 0)
+        else if (!_cameo && c == '$' && Peek() == '[' && LongBracketLevelAt(_pos + 1) >= 0)
         {
             // $[[ ... {expr} ... ]]: an interpolated long string (may span lines, no escapes)
             _pos++;
@@ -128,7 +145,7 @@ public sealed class Lexer
             t.Kind = TokenKind.Interp;
             t.Parts = ReadInterpolated(t);
         }
-        else if (c == '[' && (Peek() == '[' || Peek() == '='))
+        else if (!_cameo && c == '[' && (Peek() == '[' || Peek() == '='))
         {
             int level = LongBracketLevel();
             if (level >= 0)
@@ -159,7 +176,7 @@ public sealed class Lexer
             }
             _pos = end + delim.Length;
         }
-        else if (_cameo && c == '/' && Peek() is not ('/' or '=') && CanStartRegexLiteral())
+        else if (_cameo && c == '/' && Peek() is not ('/' or '*' or '=') && CanStartRegexLiteral())
         {
             t.Kind = TokenKind.Regex;
             t.Text = ReadRegex(t, out string flags);
@@ -227,7 +244,27 @@ public sealed class Lexer
             char c = _src[_pos];
             if (c == '\n' || c == '\r') NewLine();
             else if (c == ' ' || c == '\t' || c == '\f' || c == '\v') _pos++;
-            else if (c == '-' && Peek() == '-')
+            else if (_cameo && c == '/' && Peek() == '/')
+            {
+                _pos += 2;
+                while (_pos < _src.Length && _src[_pos] != '\n' && _src[_pos] != '\r') _pos++;
+            }
+            else if (_cameo && c == '/' && Peek() == '*')
+            {
+                int startLine = _line, startCol = _pos - _lineStart + 1;
+                _pos += 2;
+                int depth = 1;
+                while (_pos < _src.Length && depth > 0)
+                {
+                    char ch = _src[_pos];
+                    if (ch == '\n' || ch == '\r') { NewLine(); continue; }
+                    if (ch == '/' && Peek() == '*') { _pos += 2; depth++; continue; }
+                    if (ch == '*' && Peek() == '/') { _pos += 2; depth--; continue; }
+                    _pos++;
+                }
+                if (depth > 0) throw Error("unfinished block comment", startLine, startCol);
+            }
+            else if (!_cameo && c == '-' && Peek() == '-')
             {
                 _pos += 2;
                 if (Cur == '[')
@@ -238,6 +275,34 @@ public sealed class Lexer
                 while (_pos < _src.Length && _src[_pos] != '\n' && _src[_pos] != '\r') _pos++;
             }
             else break;
+        }
+    }
+
+    private string ReadTripleQuotedString()
+    {
+        int startLine = _line, startCol = _pos - _lineStart + 1;
+        _pos += 3; // consume opening """
+        if (Cur == '\r' || Cur == '\n') NewLine();
+        var sb = new StringBuilder();
+        while (true)
+        {
+            if (_pos >= _src.Length) throw Error("unfinished multi-line string", startLine, startCol);
+            if (_src[_pos] == '"' && Peek() == '"' && Peek(2) == '"')
+            {
+                _pos += 3;
+                return sb.ToString();
+            }
+            char c = _src[_pos];
+            if (c == '\n' || c == '\r')
+            {
+                NewLine();
+                sb.Append('\n');
+            }
+            else
+            {
+                sb.Append(c);
+                _pos++;
+            }
         }
     }
 
@@ -419,6 +484,8 @@ public sealed class Lexer
     // Compound assignment (+=, ..=, ...) is an extension to Teal.
     private static readonly string[] Ops3 = { "...", "..=", "//=", "<<=", ">>=" };
     private static readonly string[] Ops2 = { "==", "~=", "!=", "|>", "??", "?.", "<=", ">=", "//", "::", "<<", ">>", "..", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=" };
+    private static readonly string[] CameoOps3 = { "...", "..=", "~/=", "**=", "<<=", ">>=" };
+    private static readonly string[] CameoOps2 = { "==", "!=", "~=", "&&", "||", "|>", "??", "?.", "<=", ">=", "~/", "**", "::", "<<", ">>", "..", "+=", "-=", "*=", "/=", "%=", "^=", "&=", "|=" };
     private const string Ops1 = "+-*/%^#&~|<>=(){}[];:,.?!$";
 
     // At the opening quote of $"...". Splits the string into literal pieces and {expression}
@@ -502,13 +569,24 @@ public sealed class Lexer
     private List<(bool IsExpr, string Text)> ReadInterpolatedLong(Token t, int level)
     {
         _pos += level + 2;
+        return ReadInterpolatedDelimited(t, "]" + new string('=', level) + "]", "unfinished long string");
+    }
+
+    // At the opening '"' of $""" ... """. Raw multi-line interpolated string in Cameo.
+    private List<(bool IsExpr, string Text)> ReadInterpolatedTripleQuote(Token t)
+    {
+        _pos += 3;
+        return ReadInterpolatedDelimited(t, "\"\"\"", "unfinished multi-line string");
+    }
+
+    private List<(bool IsExpr, string Text)> ReadInterpolatedDelimited(Token t, string close, string eofError)
+    {
         if (Cur == '\r' || Cur == '\n') NewLine();
         var parts = new List<(bool, string)>();
         var literal = new StringBuilder();
-        string close = "]" + new string('=', level) + "]";
         while (true)
         {
-            if (_pos >= _src.Length) throw Error("unfinished long string", t.Line, t.Col);
+            if (_pos >= _src.Length) throw Error(eofError, t.Line, t.Col);
             if (string.CompareOrdinal(_src, _pos, close, 0, close.Length) == 0) { _pos += close.Length; break; }
             char c = Cur;
             if (c == '\n' || c == '\r') { literal.Append('\n'); NewLine(); continue; }
@@ -556,9 +634,16 @@ public sealed class Lexer
 
     private string ReadOp()
     {
-        foreach (string op in Ops3)
+        if (_cameo && Cur == '~' && Peek() == '/' && _prev is { Kind: TokenKind.Op, Text: "=" or "!" } && _prev.End == _pos)
+        {
+            _pos++;
+            return "~";
+        }
+        string[] ops3 = _cameo ? CameoOps3 : Ops3;
+        string[] ops2 = _cameo ? CameoOps2 : Ops2;
+        foreach (string op in ops3)
             if (string.CompareOrdinal(_src, _pos, op, 0, 3) == 0) { _pos += 3; return op; }
-        foreach (string op in Ops2)
+        foreach (string op in ops2)
             if (string.CompareOrdinal(_src, _pos, op, 0, 2) == 0) { _pos += 2; return op; }
         char c = Cur;
         if (Ops1.IndexOf(c) >= 0) { _pos++; return c.ToString(); }

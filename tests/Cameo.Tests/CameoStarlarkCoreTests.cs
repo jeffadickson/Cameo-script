@@ -307,7 +307,7 @@ public sealed class CameoStarlarkCoreTests
                    Future == nil, jit == nil,
                    math.random == nil, math.randomseed == nil,
                    crypto.randomBytes == nil, crypto.randomInt == nil, crypto.uuid == nil,
-                   crypto.sha256("cameo") ~= nil,
+                   crypto.sha256("cameo") != nil,
                    json.encode([1, 2, 3])
             """);
 

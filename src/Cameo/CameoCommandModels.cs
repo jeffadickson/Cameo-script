@@ -46,10 +46,11 @@ public sealed record CameoReplCommand(bool AllowNetwork = true, bool AllowProces
 /// <param name="Timeout">Per-case script execution timeout. Defaults to 30 seconds.</param>
 public sealed record CameoTestCommand(IReadOnlyList<string> Files, bool Json = false,
     TimeSpan? Timeout = null) : CameoCommand;
-/// <summary>Format Cameo source files into canonical style, or verify formatting with CheckOnly.</summary>
+/// <summary>Format Cameo source files into canonical style, optionally migrating legacy syntax or verifying with CheckOnly.</summary>
 /// <param name="Files">Nonempty source file paths.</param>
 /// <param name="CheckOnly">When true, do not modify files and exit non-zero if any file needs formatting.</param>
-public sealed record CameoFmtCommand(IReadOnlyList<string> Files, bool CheckOnly = false) : CameoCommand;
+/// <param name="Migrate">When true, rewrite legacy Lua-surface syntax to clean Cameo syntax before formatting.</param>
+public sealed record CameoFmtCommand(IReadOnlyList<string> Files, bool CheckOnly = false, bool Migrate = false) : CameoCommand;
 /// <summary>Validate and compile a Cameo source file into a static CEMB v1 image, C++20 header, and/or UART hex payload.</summary>
 public sealed record CameoEmbedCommand(
     string File,

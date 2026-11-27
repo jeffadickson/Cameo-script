@@ -1,4 +1,4 @@
--- Expected failures use the actual typed JSON and Future error records.
+// Expected failures use the actual typed JSON and Future error records.
 fn decodeOrFallback(source: string) -> any {
     let value, issue = json.decode(source)
     if issue != nil {
@@ -18,7 +18,7 @@ if issue != nil {
     print($"unexpected value: {value}")
 }
 
--- In a general value/error pair, even false is an error: test against nil.
+// In a general value/error pair, even false is an error: test against nil.
 fn falseIssue() -> integer, any {
     return 0, false
 }

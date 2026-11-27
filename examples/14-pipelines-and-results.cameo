@@ -1,11 +1,11 @@
--- Unified dot calls, pipelines (|>), !=, catch-all recovery, and parallel Result transfer.
+// Unified dot calls, pipelines (|>), !=, catch-all recovery, and parallel Result transfer.
 fn parsePort(text: string) -> Result<integer, string> {
     let cleaned = text.trim()
-    if not cleaned.retest("^[0-9]{1,5}$") {
+    if !cleaned.retest("^[0-9]{1,5}$") {
         return err("not a port: " .. cleaned)
     }
     let port = math.tointeger(tonumber(cleaned))
-    if port == nil or port < 1 or port > 65535 {
+    if port == nil || port < 1 || port > 65535 {
         return err("out of range: " .. cleaned)
     }
     return ok(port)
@@ -13,7 +13,7 @@ fn parsePort(text: string) -> Result<integer, string> {
 
 fn summarize(raw: string) -> string {
     let label = try parsePort(raw).map((p) => $"port {p}")
-        catch (reason) { $"invalid ({reason})" }
+    catch (reason) { $"invalid ({reason})" }
     return label
 }
 

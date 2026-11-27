@@ -113,9 +113,9 @@ public sealed class CameoErgonomicsTests
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = check });
         var values = engine.RunString("""
             record Problem {
-                enum Kind
-                    "timeout" "cancelled"
-                end
+                enum Kind {
+                    "timeout", "cancelled"
+                }
                 kind: Kind
                 detail: string
             }
@@ -247,7 +247,7 @@ public sealed class CameoErgonomicsTests
                 let piped = a |> add(b) |> square
                 let direct = square(add(a, b))
                 let res = Future.parallel(make, flag, piped).get()
-                return piped, direct, res.isOk(), res.isOk() and res.value() or res.issue()
+                return piped, direct, res.isOk(), res.isOk() && res.value() || res.issue()
                 """);
             long expected = (long)(a + b) * (a + b);
             Assert.Equal(expected, values[0].I);

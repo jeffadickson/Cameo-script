@@ -436,7 +436,10 @@ public sealed partial class TypeChecker
                     {
                         try
                         {
-                            Expr cond = Parser.ParseExpression(where, owner.File);
+                            bool whereCameo = _isCameo
+                                && !owner.File.EndsWith(".d.tl", StringComparison.Ordinal)
+                                && !owner.File.EndsWith(".tl", StringComparison.Ordinal);
+                            Expr cond = Parser.ParseExpression(where, owner.File, cameo: whereCameo);
                             // type-check the fresh copy with `self` bound to the tested type (annotates nested `is`)
                             var scope = new Scope((Scope?)owner.BodyScope ?? _scope);
                             scope.Declare(new VarInfo { Name = "self", Type = t });
@@ -966,12 +969,21 @@ public sealed partial class TypeChecker
 
     // ------------------------------------------------------------------ operators
 
-    private static string OpName(BinaryOp op) => op switch
+    private string OpName(BinaryOp op) => op switch
     {
-        BinaryOp.Add => "+", BinaryOp.Sub => "-", BinaryOp.Mul => "*", BinaryOp.Div => "/", BinaryOp.IDiv => "//",
-        BinaryOp.Mod => "%", BinaryOp.Pow => "^", BinaryOp.Concat => "..", BinaryOp.Eq => "==", BinaryOp.Ne => "~=",
-        BinaryOp.Lt => "<", BinaryOp.Le => "<=", BinaryOp.Gt => ">", BinaryOp.Ge => ">=", BinaryOp.And => "and",
-        BinaryOp.Or => "or", BinaryOp.BAnd => "&", BinaryOp.BOr => "|", BinaryOp.BXor => "~", BinaryOp.Shl => "<<",
+        BinaryOp.Add => "+", BinaryOp.Sub => "-", BinaryOp.Mul => "*", BinaryOp.Div => "/",
+        BinaryOp.IDiv => _isCameo ? "~/" : "//",
+        BinaryOp.Mod => "%",
+        BinaryOp.Pow => _isCameo ? "**" : "^",
+        BinaryOp.Concat => "..", BinaryOp.Eq => "==",
+        BinaryOp.Ne => _isCameo ? "!=" : "~=",
+        BinaryOp.Lt => "<", BinaryOp.Le => "<=", BinaryOp.Gt => ">", BinaryOp.Ge => ">=",
+        BinaryOp.And => _isCameo ? "&&" : "and",
+        BinaryOp.Or => _isCameo ? "||" : "or",
+        BinaryOp.BAnd => "&", BinaryOp.BOr => "|",
+        BinaryOp.BXor => _isCameo ? "^" : "~",
+        BinaryOp.Shl => "<<",
+        BinaryOp.Coalesce => "??",
         _ => ">>",
     };
 

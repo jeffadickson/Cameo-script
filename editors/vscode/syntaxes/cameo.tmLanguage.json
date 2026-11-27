@@ -15,12 +15,22 @@
   "repository": {
     "comments": {
       "patterns": [
-        { "name": "comment.block.cameo", "begin": "--\\[(=*)\\[", "end": "\\]\\1\\]" },
-        { "name": "comment.line.double-dash.cameo", "match": "--.*$" }
+        { "include": "#block-comment" },
+        { "name": "comment.line.double-slash.cameo", "match": "//.*$" }
       ]
+    },
+    "block-comment": {
+      "name": "comment.block.cameo",
+      "begin": "/\\*",
+      "end": "\\*/",
+      "patterns": [{ "include": "#block-comment" }]
     },
     "interpolated": {
       "patterns": [
+        {
+          "name": "string.interpolated.multiline.cameo", "begin": "\\$\"\"\"", "end": "\"\"\"",
+          "patterns": [{ "include": "#braces" }]
+        },
         {
           "name": "string.interpolated.cameo", "begin": "\\$\"", "end": "\"",
           "patterns": [{ "include": "#escapes" }, { "include": "#braces" }]
@@ -28,10 +38,6 @@
         {
           "name": "string.interpolated.cameo", "begin": "\\$'", "end": "'",
           "patterns": [{ "include": "#escapes" }, { "include": "#braces" }]
-        },
-        {
-          "name": "string.interpolated.multiline.cameo", "begin": "\\$\\[(=*)\\[", "end": "\\]\\1\\]",
-          "patterns": [{ "include": "#braces" }]
         }
       ]
     },
@@ -49,9 +55,9 @@
     },
     "strings": {
       "patterns": [
+        { "name": "string.quoted.triple.cameo", "begin": "\"\"\"", "end": "\"\"\"" },
         { "name": "string.quoted.double.cameo", "begin": "\"", "end": "\"|$", "patterns": [{ "include": "#escapes" }] },
-        { "name": "string.quoted.single.cameo", "begin": "'", "end": "'|$", "patterns": [{ "include": "#escapes" }] },
-        { "name": "string.quoted.other.multiline.cameo", "begin": "\\[(=*)\\[", "end": "\\]\\1\\]" }
+        { "name": "string.quoted.single.cameo", "begin": "'", "end": "'|$", "patterns": [{ "include": "#escapes" }] }
       ]
     },
     "regex": {
@@ -77,12 +83,10 @@
     },
     "keywords": {
       "patterns": [
-        { "name": "keyword.control.cameo", "match": "\\b(?:if|then|else|elseif|end|for|in|do|while|repeat|until|return|break|continue|goto|match|try|catch|using|import|export|from)\\b" },
-        { "name": "keyword.declaration.cameo", "match": "\\b(?:fn|let|var|local|global|function|record|interface|enum|type|implements|extends|static|where|is|as|require)\\b" },
-        { "name": "keyword.operator.logical.cameo", "match": "\\b(?:and|or|not)\\b" },
+        { "name": "keyword.control.cameo", "match": "\\b(?:if|else|for|in|do|while|return|break|continue|goto|match|try|catch|using|import|export|from)\\b" },
+        { "name": "keyword.declaration.cameo", "match": "\\b(?:fn|let|var|global|function|record|interface|enum|type|implements|extends|static|where|is|as|require)\\b" },
         { "name": "constant.language.cameo", "match": "\\b(?:nil|true|false)\\b" },
-        { "name": "variable.language.self.cameo", "match": "\\bself\\b" },
-        { "name": "storage.modifier.cameo", "match": "<\\s*(?:const|close|total)\\s*>" }
+        { "name": "variable.language.self.cameo", "match": "\\bself\\b" }
       ]
     },
     "types": {
@@ -95,7 +99,7 @@
     "functions": {
       "patterns": [
         {
-          "match": "\\b(fn|function)\\s+([A-Za-z_][\\w.:]*)",
+          "match": "\\b(fn)\\s+([A-Za-z_][\\w.:]*)",
           "captures": {
             "1": { "name": "keyword.declaration.cameo" },
             "2": { "name": "entity.name.function.cameo" }
@@ -108,7 +112,7 @@
     },
     "operators": {
       "name": "keyword.operator.cameo",
-      "match": "=>|->|\\|>|\\?\\?|\\?\\.|=~|!~|!=|\\.\\.=|//=|<<=|>>=|[-+*/%^&|]=|\\.\\.\\.|\\.\\.|==|~=|<=|>=|<<|>>|//|[-+*/%^#&|~<>=?]"
+      "match": "=>|->|\\|>|\\?\\?|\\?\\.|=~|!~|!=|&&|\\|\\||\\.\\.=|~/=|\\*\\*=|<<=|>>=|[-+*/%^&|]=|\\.\\.\\.|\\.\\.|==|<=|>=|<<|>>|~/|\\*\\*|[-+*/%^#&|~!<>=?]"
     }
   }
 }

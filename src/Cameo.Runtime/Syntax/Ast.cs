@@ -596,6 +596,8 @@ public sealed class Chunk : Node
     public List<((int StartLine, int StartCol, int EndLine, int EndCol) Range, Vm.ClassTag Tag)>? ClassTags;
     /// <summary>Cameo top-level <c>export</c> declarations collected during parsing.</summary>
     public List<CameoExportItem>? CameoExports;
+    /// <summary>True when this chunk was parsed with the Cameo surface grammar.</summary>
+    public bool IsCameo;
 }
 
 // =====================================================================

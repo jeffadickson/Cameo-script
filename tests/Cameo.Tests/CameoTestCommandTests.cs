@@ -82,7 +82,7 @@ public sealed class CameoTestCommandTests
         string error = files.Add("02-runtime.cameo", """error("failed assertion")""");
         string exit = files.Add("03-exit.cameo", "os.exit(7)");
         string missing = files.Name("04-missing.cameo");
-        string aborted = files.Add("05-loop.cameo", "while true do end");
+        string aborted = files.Add("05-loop.cameo", "while true { }");
         string successfulExit = files.Add("06-ok.cameo", "os.exit(0)");
         var result = CameoCommands.Execute(
             new CameoTestCommand([successfulExit, aborted, missing, exit, error, bad],

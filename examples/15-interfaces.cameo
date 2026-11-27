@@ -1,6 +1,6 @@
--- Cameo interfaces: braced `interface` declarations, inline `fn` record methods,
--- explicit `implements` verification, structural satisfaction (records and plain
--- tables), and unified `.` method dispatch.
+// Cameo interfaces: braced `interface` declarations, inline `fn` record methods,
+// explicit `implements` verification, structural satisfaction (records and plain
+// tables), and unified `.` method dispatch.
 
 interface Greeter {
     fn greet(name: string) -> string
@@ -36,7 +36,7 @@ record Bot implements LoudGreeter {
     }
 }
 
--- No `implements` clause: Human satisfies Greeter structurally.
+// No `implements` clause: Human satisfies Greeter structurally.
 record Human {
     first: string
 

@@ -288,7 +288,7 @@ public sealed partial class Parser
         return [operand, valueSlot, branch];
     }
 
-    private Stat ParseCameoEnum()
+    private Stat ParseCameoEnum(bool isGlobal = false)
     {
         Token start = _toks[_p++]; // enum
         Token name = ExpectName();
@@ -303,10 +303,40 @@ public sealed partial class Parser
         ExpectClose("}", "{", open);
         return At(new TypeDeclStat
         {
+            IsGlobal = isGlobal,
             Name = At(new AttribName { Name = name.Text }, name),
             Kind = TypeDeclKind.Enum,
             Def = def,
         }, start);
+    }
+
+    private bool AtCameoTypeAlias()
+    {
+        if (!_allowExpressionFunctions || !IsName("type") || !TokIsName(PeekTok())) return false;
+        Token after = PeekTok(2);
+        return TokIsOp(after, "=") || TokIsOp(after, "<");
+    }
+
+    private Stat ParseCameoTypeAlias(bool isGlobal)
+    {
+        Token start = _toks[_p++]; // type
+        Token name = ExpectName();
+        var s = At(new TypeDeclStat
+        {
+            IsGlobal = isGlobal,
+            Kind = TypeDeclKind.Alias,
+            Name = At(new AttribName { Name = name.Text }, name),
+        }, start);
+        if (IsOp("<")) s.TypeParams = ParseTypeParams();
+        ExpectOp("=");
+        s.Def = ParseNewType(name);
+        if (s.Def is RecordTypeNode r)
+        {
+            s.Kind = r.IsInterface ? TypeDeclKind.Interface : TypeDeclKind.Record;
+            r.TypeParams ??= s.TypeParams;
+        }
+        else if (s.Def is EnumTypeNode) s.Kind = TypeDeclKind.Enum;
+        return s;
     }
 
     private Expr BuildCameoRegexLiteral(Token regexTok)
@@ -360,7 +390,6 @@ public sealed partial class Parser
     private int _expressionDepth;
     private int _headerExpressionDepth;
     private bool _borrowedTokens;
-    private Dictionary<(Token Start, string Keyword, MacroSignatureContext Macros, bool InMacro, bool Variables, int Levels), bool> _headerCache = new();
 
     // Probes borrow tokens only while the caller is suspended. The three token-list
     // mutation sites isolate their stream. Header memo keys use token identity, not
@@ -689,7 +718,12 @@ public sealed partial class Parser
 
     private Block ParseControlBody(string keyword, string construct, Token start)
     {
-        if (_allowExpressionFunctions && IsOp("{")) return ParseBraceBlock();
+        if (_allowExpressionFunctions)
+        {
+            if (IsKw(keyword))
+                throw Error($"use '{{ ... }}' instead of '{keyword} ... end' in Cameo", Cur);
+            return ParseBraceBlock();
+        }
         ExpectKw(keyword);
         Block body = ParseBlock();
         ExpectClose("end", construct, start);
@@ -701,42 +735,27 @@ public sealed partial class Parser
         statement.Clauses.Add((condition, ParseBraceBlock()));
         while (IsKw("elseif") || IsKw("else"))
         {
-            bool alternative = IsKw("elseif");
-            _p++;
-            if (!alternative && IsKw("if")) { _p++; alternative = true; }
-            if (!alternative)
+            if (IsKw("elseif"))
+                throw Error("use 'else if' instead of 'elseif' in Cameo", Cur);
+            _p++; // else
+            if (IsKw("if"))
+            {
+                _p++; // if
+                Expr next = ParseControlExpr("then");
+                if (IsKw("then")) throw Error("use '{ ... }' instead of 'then ... end' in Cameo", Cur);
+                statement.Clauses.Add((next, ParseBraceBlock()));
+            }
+            else
             {
                 statement.Else = ParseBraceBlock();
                 break;
             }
-            Expr next = ParseControlExpr("then");
-            statement.Clauses.Add((next, ParseBraceBlock()));
         }
         return statement;
     }
 
     private bool AtControlHeaderTop() => _headerExpressionDepth != 0
         && _expressionDepth == _headerExpressionDepth;
-
-    // Probe with wholly private mutable state. A real then/do selects the legacy
-    // grammar, preserving every suffix and table shorthand without token repair.
-    // Signatures are immutable during invocation; quote lists and flags are private.
-    private bool HasLegacyControlHeader(string keyword)
-    {
-        // A token is revisited only by a speculative ancestor and the actual parse.
-        // Syntax depends on macro signature identity, quote mode and remaining nesting
-        // budget; include each in the key. Syntax-equivalent token normalization
-        // retains this memo; replacement token identities cannot alias old entries.
-        var key = (Cur, keyword, _macros.SignatureVersion, _inMacro, _allowMacroVars, _levels);
-        if (_headerCache.TryGetValue(key, out bool cached)) return cached;
-        var probe = CreateSyntaxProbe();
-        try
-        {
-            probe.ParseExprList();
-            return _headerCache[key] = probe.IsKw(keyword);
-        }
-        catch (CameoSyntaxException) { return _headerCache[key] = false; }
-    }
 
     // Mutable parse flags and quote output stay private; signatures and tokens
     // are borrowed read-only until the first declaration or token normalization.
@@ -746,7 +765,6 @@ public sealed partial class Parser
         {
             _p = _p,
             _borrowedTokens = true,
-            _headerCache = _headerCache,
             _levels = _levels,
             _classOwner = null,
             _expressionState = new ExpressionState(),
@@ -763,6 +781,7 @@ public sealed partial class Parser
 
     private bool HasLegacyRecordDeclaration()
     {
+        if (_allowExpressionFunctions) return false;
         var probe = CreateSyntaxProbe();
         try { return probe.TryParseTypeDecl(probe.Cur, false) != null; }
         catch (CameoSyntaxException) { return false; }
@@ -775,15 +794,16 @@ public sealed partial class Parser
         try { return ParseExpr(); }
         finally { _headerExpressionDepth = previous; }
     }
+
     private Expr ParseControlExpr(string keyword)
     {
-        if (!_allowExpressionFunctions || HasLegacyControlHeader(keyword)) return ParseExpr();
+        if (!_allowExpressionFunctions) return ParseExpr();
         return ParseBraceHeaderExpr();
     }
 
     private List<Expr> ParseControlExprList(string keyword)
     {
-        if (!_allowExpressionFunctions || HasLegacyControlHeader(keyword)) return ParseExprList();
+        if (!_allowExpressionFunctions) return ParseExprList();
         int previous = _headerExpressionDepth;
         _headerExpressionDepth = _expressionDepth + 1;
         try { return ParseExprList(); }
@@ -857,7 +877,7 @@ public sealed partial class Parser
         if (!_allowExpressionFunctions || !IsName("export")) return false;
         Token nx = PeekTok();
         if (nx.Kind != TokenKind.Name) return false;
-        return nx.Text is "fn" or "let" or "var" or "record" or "interface" or "enum";
+        return nx.Text is "fn" or "let" or "var" or "record" or "interface" or "enum" or "type";
     }
 
     private List<Stat> ParseCameoExportSequence()
@@ -917,7 +937,14 @@ public sealed partial class Parser
                 RecordExport(tds.Name.Name, false, exportTok);
             return [en];
         }
-        throw Error("export must be followed by fn, let, var, record, interface, or enum", exportTok);
+        if (AtCameoTypeAlias())
+        {
+            Stat alias = ParseCameoTypeAlias(isGlobal: false);
+            if (alias is TypeDeclStat tds)
+                RecordExport(tds.Name.Name, tds.Kind == TypeDeclKind.Record, exportTok);
+            return [alias];
+        }
+        throw Error("export must be followed by fn, let, var, record, interface, enum, or type", exportTok);
     }
 
     private bool AtCameoImport()

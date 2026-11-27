@@ -29,6 +29,30 @@ public static class CameoFormatter
         return outcome.Formatted!;
     }
 
+    /// <summary>Migrates legacy Lua-surface Cameo source to clean Cameo syntax and formats it, throwing on syntax errors.</summary>
+    public static string Migrate(string source, string fileName = "<migrate>")
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        CameoFormatOutcome outcome = TryMigrate(source, fileName);
+        if (outcome.Diagnostic != null)
+            throw new CameoSyntaxException(new Diagnostic(
+                outcome.Diagnostic.File ?? fileName,
+                outcome.Diagnostic.Line ?? 1,
+                outcome.Diagnostic.Column ?? 1,
+                outcome.Diagnostic.Message));
+        return outcome.Formatted!;
+    }
+
+    /// <summary>Migrates legacy Lua-surface Cameo source to clean Cameo syntax and formats it, returning a structured diagnostic on syntax errors.</summary>
+    public static CameoFormatOutcome TryMigrate(string source, string fileName = "<migrate>")
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        string migrated = CameoMigrator.MigrateSource(source);
+        CameoFormatOutcome formatted = TryFormat(migrated, fileName);
+        if (formatted.Diagnostic != null) return formatted;
+        return new CameoFormatOutcome(formatted.Formatted, !string.Equals(source, formatted.Formatted, StringComparison.Ordinal), null);
+    }
+
     /// <summary>Formats Cameo source into canonical style, returning a structured diagnostic on syntax errors.</summary>
     public static CameoFormatOutcome TryFormat(string source, string fileName = "<format>")
     {
@@ -303,27 +327,23 @@ public static class CameoFormatter
         int p = gapStart;
         while (p + 1 < gapEnd)
         {
-            if (src[p] == '-' && src[p + 1] == '-')
+            if (src[p] == '/' && src[p + 1] == '/')
             {
                 p += 2;
-                if (p < gapEnd && src[p] == '[')
-                {
-                    int eq = 0;
-                    int q = p + 1;
-                    while (q < gapEnd && src[q] == '=') { eq++; q++; }
-                    if (q < gapEnd && src[q] == '[')
-                    {
-                        int commentStart = p - 2;
-                        q++;
-                        string closeDelim = "]" + new string('=', eq) + "]";
-                        int closeIdx = src.IndexOf(closeDelim, q, gapEnd - q, StringComparison.Ordinal);
-                        int commentEnd = closeIdx >= 0 ? closeIdx + closeDelim.Length : gapEnd;
-                        MarkInteriorLines(commentStart, commentEnd, lineStarts, preserveLine);
-                        p = commentEnd;
-                        continue;
-                    }
-                }
                 while (p < gapEnd && src[p] != '\n') p++;
+            }
+            else if (src[p] == '/' && src[p + 1] == '*')
+            {
+                int commentStart = p;
+                p += 2;
+                int depth = 1;
+                while (p < gapEnd && depth > 0)
+                {
+                    if (p + 1 < gapEnd && src[p] == '/' && src[p + 1] == '*') { p += 2; depth++; }
+                    else if (p + 1 < gapEnd && src[p] == '*' && src[p + 1] == '/') { p += 2; depth--; }
+                    else p++;
+                }
+                MarkInteriorLines(commentStart, p, lineStarts, preserveLine);
             }
             else
             {

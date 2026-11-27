@@ -12,7 +12,7 @@ public static partial class CameoCommands
         new("cameo.eval", "[-n|-p] [-a] [-F sep] [-i[.bak]] [--begin code] [--end code] -e <code> [args|files...]", nameof(CameoEvalCommand), CameoUndoPolicy.ScriptOwned),
         new("cameo.dump", "dump [--no-check] <file.cameo>", nameof(CameoDumpCommand), CameoUndoPolicy.NotApplicable),
         new("cameo.repl", "repl [--sandboxed|--hermetic]", nameof(CameoReplCommand), CameoUndoPolicy.ScriptOwned),
-        new("cameo.fmt", "fmt [--check] <file.cameo>...", nameof(CameoFmtCommand), CameoUndoPolicy.ScriptOwned),
+        new("cameo.fmt", "fmt [--check] [--migrate] <file.cameo>...", nameof(CameoFmtCommand), CameoUndoPolicy.ScriptOwned),
         new("cameo.embed", "embed [--out-bin <file.cemb>] [--out-header <file.hpp>] [--out-hex <file.hex>] [--symbol <name>] [--namespace <ns>] [--host-fn <name>]... [--floats|--no-floats] [--no-records] [--no-math] [--read-only] [--boot-only-closures] [--no-check] [--json] <file.cameo>", nameof(CameoEmbedCommand), CameoUndoPolicy.ScriptOwned),
         new("cameo.test", "test [--json] [--timeout <seconds>] <file.cameo>...", nameof(CameoTestCommand), CameoUndoPolicy.ScriptOwned),
         new("cameo.help", "--help", nameof(CameoHelpCommand), CameoUndoPolicy.NotApplicable),
@@ -113,6 +113,7 @@ public static partial class CameoCommands
     private static CameoCommandParse ParseFmt(IReadOnlyList<string> args)
     {
         bool checkOnly = false;
+        bool migrate = false;
         var files = new List<string>();
         int i = 1;
         for (; i < args.Count; i++)
@@ -124,12 +125,13 @@ public static partial class CameoCommands
                 break;
             }
             if (arg == "--check") checkOnly = true;
+            else if (arg == "--migrate") migrate = true;
             else if (arg.StartsWith('-')) return Invalid($"Unknown fmt option: {arg}");
             else files.Add(arg);
         }
         if (files.Count == 0 || files.Any(string.IsNullOrWhiteSpace))
             return Invalid("fmt requires at least one source file");
-        return new(new CameoFmtCommand(files.ToArray(), checkOnly), null);
+        return new(new CameoFmtCommand(files.ToArray(), checkOnly, migrate), null);
     }
 
     private static bool IsEvalInvocation(IReadOnlyList<string> args)

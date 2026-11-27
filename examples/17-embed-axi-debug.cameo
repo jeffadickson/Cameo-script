@@ -1,7 +1,7 @@
--- Hardware bring-up and live diagnostic script for NexRT (jeffadickson/rtos) via Cameo.Embed.
--- Zero heap, zero units, zero dictionaries, integer-only by default (--boot-only-closures).
--- Exercises first-class Ptr, explicit AXI4-Lite/AXI4 MMIO, bitfield decoding, hexdump,
--- RTOS thread/stack-guard inspection, binary flight-recorder trace, and watchdog check-in.
+// Hardware bring-up and live diagnostic script for NexRT (jeffadickson/rtos) via Cameo.Embed.
+// Zero heap, zero units, zero dictionaries, integer-only by default (--boot-only-closures).
+// Exercises first-class Ptr, explicit AXI4-Lite/AXI4 MMIO, bitfield decoding, hexdump,
+// RTOS thread/stack-guard inspection, binary flight-recorder trace, and watchdog check-in.
 
 enum HealthCode {
     "ok"
@@ -28,7 +28,7 @@ fn health_id(code: HealthCode) -> integer {
 }
 
 export fn diagnose_bus(seq: integer) -> integer {
-    -- 1. First-class Ptr arithmetic and alignment check on AXI UARTLite peripheral
+    // 1. First-class Ptr arithmetic and alignment check on AXI UARTLite peripheral
     let uart: Ptr = ptr(UART_BASE)
     dbg.assert(uart.is_aligned(4), 100)
     let status_ptr: Ptr = uart + UART_STATUS_OFF
@@ -42,9 +42,9 @@ export fn diagnose_bus(seq: integer) -> integer {
         return health_id("uart_tx_full")
     }
 
-    -- 2. Explicit AXI4-Lite read & bitfield decode on NexRT-HWSched status register
+    // 2. Explicit AXI4-Lite read & bitfield decode on NexRT-HWSched status register
     let sched_stat, sched_ok = axi.read32(HWSCHED_BASE + 4)
-    if not sched_ok {
+    if !sched_ok {
         return health_id("bus_fault")
     }
     let active_tid: integer = dbg.bits(sched_stat, 0, 4)
@@ -56,9 +56,9 @@ export fn diagnose_bus(seq: integer) -> integer {
         return health_id("hwsched_seu_fault")
     }
 
-    -- 3. Read-modify-write UART control scratch bits & poll ready bit
+    // 3. Read-modify-write UART control scratch bits & poll ready bit
     let new_ctrl, rmw_ok = axi.rmw32(UART_BASE + UART_CTRL_OFF, 0x000000FF, 0x0000005A)
-    if not rmw_ok {
+    if !rmw_ok {
         return health_id("bus_fault")
     }
     dbg.expect_eq(dbg.bits(new_ctrl, 0, 8), 0x5A, 101)
@@ -66,23 +66,23 @@ export fn diagnose_bus(seq: integer) -> integer {
     dbg.assert(ready, 102)
     axi.fence()
 
-    -- 4. Burst read 4 words from SRAM telemetry buffer into static scratchpad + hex dump
+    // 4. Burst read 4 words from SRAM telemetry buffer into static scratchpad + hex dump
     let words, burst_ok = axi.burst_read32(SRAM_DIAG_BASE, 4, 0)
-    if not burst_ok or words != 4 {
+    if !burst_ok || words != 4 {
         return health_id("bus_fault")
     }
     var checksum: integer = 0
     for i = 0, 3 {
-        checksum = checksum ~ axi.scratch_get32(i)
+        checksum = checksum ^ axi.scratch_get32(i)
     }
     dbg.log_hex("sram_xor", checksum)
     let dumped: integer = dbg.hexdump(ptr(SRAM_DIAG_BASE), 16)
     dbg.expect_eq(dumped, 16, 103)
 
-    -- 5. Inspect NexRT thread table stack guards and report liveness
+    // 5. Inspect NexRT thread table stack guards and report liveness
     let n_tasks: integer = rtos.task_count()
     for t = 0, n_tasks - 1 {
-        if not rtos.task_guard_ok(t) {
+        if !rtos.task_guard_ok(t) {
             rtos.log("bad_guard_tid", t)
             dbg.trace(0x0103, t)
             return health_id("stack_guard_fault")

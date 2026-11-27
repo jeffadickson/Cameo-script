@@ -55,7 +55,7 @@ public class CameoCommandTests
     [Fact]
     public void Managed_checks_distinguish_errors_warnings_and_missing_files()
     {
-        WithSource("local unused = 1",path=>
+        WithSource("let unused = 1",path=>
         {
             var warnings=CameoCommands.Execute(new CameoCheckCommand([path]),TextWriter.Null,TextWriter.Null);
             Assert.Equal(0,warnings.ExitCode);
@@ -65,7 +65,7 @@ public class CameoCommandTests
             Assert.Contains(mixed.Diagnostics,d=>!d.Warning&&d.Code=="CAMEOCLI003");
             Assert.Contains(mixed.Diagnostics,d=>d.Warning);
         });
-        foreach(string source in new[]{"local =","local f: function(integer): integer = 'bad'"})
+        foreach(string source in new[]{"let =","let f: function(integer): integer = 'bad'"})
             WithSource(source,path=>
             {
                 var errors=CameoCommands.Execute(new CameoCheckCommand([path]),TextWriter.Null,TextWriter.Null);
@@ -95,7 +95,7 @@ public class CameoCommandTests
     [Fact]
     public void Managed_memory_abort_is_distinct_from_timeout()
     {
-        WithSource("while true do end",path=>
+        WithSource("while true { }",path=>
         {
             // The inherited watchdog samples process-wide managed memory every10ms.
             // Keep the script active for observation; the independent timeout bounds
@@ -142,7 +142,7 @@ public class CameoCommandTests
 
     [Theory]
     [InlineData("print(arg[1])",0,"é\n",null)]
-    [InlineData("local f = (x) => x",1,"","CAMEO001")]
+    [InlineData("let f = (x) => x",1,"","CAMEO001")]
     [InlineData("error('héllo')",1,"","CAMEORUNTIME")]
     [InlineData("os.exit(7)",7,"",null)]
     [InlineData("return ((n: integer) => n * 2)(21)",0,"",null)]
@@ -180,7 +180,7 @@ public class CameoCommandTests
     [Fact]
     public void Managed_timeout_is_an_explicit_abort_outcome()
     {
-        WithSource("while true do end",path=>
+        WithSource("while true { }",path=>
         {
             var result=CameoCommands.Execute(new CameoRunCommand(path,[],Timeout:TimeSpan.FromMilliseconds(20)),TextWriter.Null,TextWriter.Null);
             Assert.Equal(124,result.ExitCode);

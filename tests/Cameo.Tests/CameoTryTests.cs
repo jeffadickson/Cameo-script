@@ -57,9 +57,9 @@ public sealed class CameoTryTests
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = checking });
         var values = engine.RunString("""
             record Problem {
-                enum Kind
-                    "timeout" "cancelled"
-                end
+                enum Kind {
+                    "timeout", "cancelled"
+                }
                 kind: Kind
             }
             fn read(kind: Problem.Kind) -> Result<string, Problem> {
@@ -85,17 +85,17 @@ public sealed class CameoTryTests
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = false });
         var values = engine.RunString("""
             let closed: {string} = {}
-            local function closer(name)
-                return setmetatable({}, { __close = function(_, raised)
+            fn closer(name) {
+                return setmetatable({}, { __close = (_, raised) => {
                     assert(raised == nil)
                     closed[#closed + 1] = name
-                end })
-            end
+                } })
+            }
             fn read() -> Result<integer, string> { return err("failed") }
             fn work() -> Result<integer, string> {
-                local outer <close> = closer("outer")
+                using outer = closer("outer")
                 do {
-                    local inner <close> = closer("inner")
+                    using inner = closer("inner")
                     let value = try read()
                     return ok(value)
                 }
@@ -143,7 +143,7 @@ public sealed class CameoTryTests
     {
         using var engine = new CameoEngine(new CameoRuntimeOptions { TypeCheck = false });
         var values = engine.RunString("""
-            Result.isOk = function(_) return false end
+            Result.isOk = (_) => false
             fn read() -> Result<integer, string> { return ok(42) }
             fn convert() -> Result<string, string> {
                 let value = try read()

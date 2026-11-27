@@ -1,4 +1,4 @@
--- Records describe validated application data; table literals still construct values.
+// Records describe validated application data; table literals still construct values.
 record Stock {
     name: string
     count: integer

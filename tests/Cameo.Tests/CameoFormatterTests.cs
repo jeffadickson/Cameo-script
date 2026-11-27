@@ -70,26 +70,27 @@ public class CameoFormatterTests
     {
         string src =
             "#!/usr/bin/env cameo\r\n" +
-            "--[[\r\n" +
+            "/*\r\n" +
             "  keep   internal   spacing {\r\n" +
+            "    /* nested comment */\r\n" +
             "    and braces }\r\n" +
-            "]]\r\n" +
+            "*/\r\n" +
             "fn demo() -> string {\r\n" +
-            "let raw = [[\r\n" +
+            "let raw = \"\"\"\r\n" +
             "  line one {\r\n" +
             "    line two\r\n" +
-            "]]\r\n" +
+            "\"\"\"\r\n" +
             "let ok = \"abc{}\" =~ /\\{\\}/i\r\n" +
             "let msg = $\"{ok}:{raw}\"\r\n" +
-            "return msg -- keep inline comment   \r\n" +
+            "return msg // keep inline comment   \r\n" +
             "}\r\n";
 
         string formatted = CameoFormatter.Format(src, "preserve.cameo");
         Assert.StartsWith("#!/usr/bin/env cameo\n", formatted);
-        Assert.Contains("  keep   internal   spacing {\n    and braces }\n", formatted);
-        Assert.Contains("    let raw = [[\n  line one {\n    line two\n]]\n", formatted);
+        Assert.Contains("  keep   internal   spacing {\n    /* nested comment */\n    and braces }\n", formatted);
+        Assert.Contains("    let raw = \"\"\"\n  line one {\n    line two\n\"\"\"\n", formatted);
         Assert.Contains("    let ok = \"abc{}\" =~ /\\{\\}/i\n", formatted);
-        Assert.Contains("    return msg -- keep inline comment\n", formatted);
+        Assert.Contains("    return msg // keep inline comment\n", formatted);
         Assert.Equal(formatted, CameoFormatter.Format(formatted, "preserve.cameo"));
     }
 

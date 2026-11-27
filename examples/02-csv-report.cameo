@@ -1,4 +1,4 @@
--- Decode and validate at the boundary; the report only sees valid work items.
+// Decode and validate at the boundary; the report only sees valid work items.
 record WorkItem {
     title: string
     owner: string
@@ -8,21 +8,21 @@ record WorkItem {
 
 fn workItem(row: {string:string}, index: integer) -> WorkItem {
     let hours = tonumber(row.hours)
-    if not hours or hours != hours or hours == math.huge or hours < 0 {
+    if !hours || hours != hours || hours == math.huge || hours < 0 {
         error($"row {index + 1}.hours: expected a finite nonnegative number", 0)
     }
-    if not row.title or row.title == "" or not row.owner or row.owner == "" {
+    if !row.title || row.title == "" || !row.owner || row.owner == "" {
         error($"row {index + 1}: title and owner are required", 0)
     }
-    if row.done != "true" and row.done != "false" {
+    if row.done != "true" && row.done != "false" {
         error($"row {index + 1}.done: expected true or false", 0)
     }
     return {title = row.title, owner = row.owner, hours = hours, done = row.done == "true"}
 }
 
 fn main() {
-    let root = arg[1] or "examples/fixtures"
-    let path = root .. "/" .. (arg[2] or "tasks.csv")
+    let root = arg[1] || "examples/fixtures"
+    let path = root .. "/" .. (arg[2] || "tasks.csv")
     let source = aio.readFile(path).get()
     let rows = unwrap(csv.decode(source))
     let items: {WorkItem} = {}
@@ -31,16 +31,16 @@ fn main() {
     }
 
     let report = Query.from(items)
-        .where((item) => not item.done)
+        .where((item) => !item.done)
         .orderByDescending((item) => item.hours)
         .select((item) => $"{item.owner}: {item.title} ({item.hours} h)")
         .toList()
     for _, line in ipairs(report) { print(line) }
 }
 
--- This command aborts on failure. Present it once, retaining exit code 2.
+// This command aborts on failure. Present it once, retaining exit code 2.
 let ok, issue = pcall(main)
-if not ok {
+if !ok {
     io.stderr.write(tostring(issue) .. "\n")
     os.exit(2)
 }

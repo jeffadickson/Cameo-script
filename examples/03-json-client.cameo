@@ -1,4 +1,4 @@
--- Offline by default; an explicit URL uses the permission-controlled HTTP API.
+// Offline by default; an explicit URL uses the permission-controlled HTTP API.
 record Profile {
     name: string
     visits: integer
@@ -7,7 +7,7 @@ record Profile {
 fn readSource(root: string, input: string) -> string {
     if input.match("^https?://") {
         let response = aio.httpGet(input).get()
-        if response.status < 200 or response.status >= 300 {
+        if response.status < 200 || response.status >= 300 {
             error($"HTTP {response.status}", 0)
         }
         return response.body
@@ -17,25 +17,25 @@ fn readSource(root: string, input: string) -> string {
 
 fn profileFrom(source: string) -> Profile {
     let decoded = unwrap(json.decode(source))
-    if not (decoded is table) { error("$: expected an object", 0) }
+    if !(decoded is table) { error("$: expected an object", 0) }
     let object = decoded as {string:any}
     if object.name == nil { error("$.name: missing", 0) }
     if object.name == json.null { error("$.name: null is not allowed", 0) }
-    if not (object.name is string) { error("$.name: expected string", 0) }
-    if not (object.visits is integer) { error("$.visits: expected integer", 0) }
-    -- Casts follow runtime checks; missing values never become a default zero.
+    if !(object.name is string) { error("$.name: expected string", 0) }
+    if !(object.visits is integer) { error("$.visits: expected integer", 0) }
+    // Casts follow runtime checks; missing values never become a default zero.
     return {name = object.name as string, visits = object.visits as integer}
 }
 
 fn main() {
-    let root = arg[1] or "examples/fixtures"
-    let input = arg[2] or "profile.json"
+    let root = arg[1] || "examples/fixtures"
+    let input = arg[2] || "profile.json"
     let profile = profileFrom(readSource(root, input))
     print($"Hello {profile.name}: {profile.visits} visits")
 }
 
 let ok, issue = pcall(main)
-if not ok {
+if !ok {
     io.stderr.write(tostring(issue) .. "\n")
     os.exit(2)
 }

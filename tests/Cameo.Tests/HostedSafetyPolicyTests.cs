@@ -23,7 +23,7 @@ public sealed class HostedSafetyPolicyTests
             let decoded = unwrap(json.decode('{"x": 21}'))
             let total = Query.from({decoded.x, decoded.x}).sum()
             let res = Result.ok(total)
-            let workerVal = Future.parallel(() => io == nil and fs == nil and aio == nil and debug == nil and os.getenv == nil).get()
+            let workerVal = Future.parallel(() => io == nil && fs == nil && aio == nil && debug == nil && os.getenv == nil).get()
             return res.value(),
                 io == nil, fs == nil, aio == nil, db == nil, cli == nil, debug == nil, dofile == nil,
                 os.getenv == nil, os.remove == nil, os.rename == nil, os.tmpname == nil,
@@ -59,16 +59,16 @@ public sealed class HostedSafetyPolicyTests
             AllowProcesses = true,
             AllowDatabase = true,
         });
-        var values = engine.RunString("""
-            let check = sandbox.run([[
-                return io == nil and fs == nil and aio == nil and db == nil
-                    and debug == nil and dofile == nil and os.getenv == nil
-                    and Result.ok(42).value() == 42
-            ]], { isolated = true }).get()
+        var values = engine.RunString(""""
+            let check = sandbox.run("""
+                return io == nil && fs == nil && aio == nil && db == nil
+                    && debug == nil && dofile == nil && os.getenv == nil
+                    && Result.ok(42).value() == 42
+            """, { isolated = true }).get()
 
             let _, denied = sandbox.run("return 1", { isolated = true, allow = {"net"} }).await()
             return check, denied.kind
-            """);
+            """");
         Assert.True(values[0].IsTruthy);
         Assert.Equal("failed", values[1].AsString);
     }
@@ -102,7 +102,7 @@ public sealed class HostedSafetyPolicyTests
             engine.State.SetGlobal("secretFile", Value.FromText(secretFile));
             engine.State.SetGlobal("traversal", Value.FromText(Path.Combine(roDir, "..", "ro2", "secret.txt")));
 
-            var values = engine.RunString("""
+            var values = engine.RunString(""""
                 let readOk, readErr = fs.read(roFile)
                 let writeRoOk, writeRoErr = fs.write(roFile, "x")
                 let writeRwOk, writeRwErr = fs.write(rwFile, "written")
@@ -113,17 +113,17 @@ public sealed class HostedSafetyPolicyTests
                 let _, aioSecretErr = aio.readFile(secretFile).await()
                 fn workerRead(p) {
                     let v, e = fs.read(p)
-                    return v == nil and e.kind == "permission_denied"
+                    return v == nil && e.kind == "permission_denied"
                 }
                 let workerDenied = Future.parallel(workerRead, secretFile).get()
-                let sandboxDenied = sandbox.run([[
-                    local p = ...
-                    local v, e = fs.read(p)
-                    return v == nil and e.kind == "permission_denied"
-                ]], { args = { secretFile } }).get()
+                let sandboxDenied = sandbox.run("""
+                    let p = ...
+                    let v, e = fs.read(p)
+                    return v == nil && e.kind == "permission_denied"
+                """, { args = { secretFile } }).get()
                 return readOk, writeRoErr.kind, writeRwOk, secretErr.kind, travErr.kind,
                     ioSecret == nil, osRemOk == nil, aioSecretErr.cause.kind, workerDenied, sandboxDenied
-                """);
+                """");
 
             Assert.Equal("allowed-read", values[0].AsString);
             Assert.Equal("permission_denied", values[1].AsString);
@@ -168,16 +168,16 @@ public sealed class HostedSafetyPolicyTests
             NetworkPolicy = policy,
             TypeCheck = false,
         });
-        var values = engine.RunString("""
+        var values = engine.RunString(""""
             let _, e1 = aio.httpGet("http://127.0.0.1:9/").await()
             let _, e2 = aio.httpGet("https://evil.example.org/").await()
             let _, e3 = aio.httpGet("http://api.example.com/").await()
-            let sandboxBlocked = sandbox.run([[
-                local _, e = aio.httpGet("https://evil.example.org/"):await()
+            let sandboxBlocked = sandbox.run("""
+                let _, e = aio.httpGet("https://evil.example.org/"):await()
                 return e.cause.kind
-            ]], { allow = { "net" } }).get()
+            """, { allow = { "net" } }).get()
             return e1.cause.kind, e2.cause.kind, e3.cause.kind, sandboxBlocked
-            """);
+            """");
         Assert.Equal("permission_denied", values[0].AsString);
         Assert.Equal("permission_denied", values[1].AsString);
         Assert.Equal("permission_denied", values[2].AsString);

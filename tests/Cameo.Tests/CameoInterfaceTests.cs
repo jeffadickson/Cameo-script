@@ -156,7 +156,7 @@ public class CameoInterfaceTests
                 fn greet(name: string) -> string
             }
 
-            -- Explicit `implements`
+            // Explicit `implements`
             record Bot implements Greeter {
                 prefix: string
                 fn greet(name: string) -> string {
@@ -164,7 +164,7 @@ public class CameoInterfaceTests
                 }
             }
 
-            -- No `implements` clause: satisfies Greeter structurally
+            // No `implements` clause: satisfies Greeter structurally
             record Human {
                 first: string
                 fn greet(name: string) -> string {
@@ -175,22 +175,22 @@ public class CameoInterfaceTests
             let bot: Bot = { prefix = "Beep" }
             let human: Human = { first = "Ada" }
 
-            -- Plain table literal with arrow (contextual parameter type inferred, self dropped)
+            // Plain table literal with arrow (contextual parameter type inferred, self dropped)
             let arrowGreeter: Greeter = {
                 greet = (name) => $"Yo, {name}!"
             }
 
-            -- Plain table literal with a pre-existing function variable
+            // Plain table literal with a pre-existing function variable
             let helper = (name: string) => $"Hey {name}!"
             let varGreeter: Greeter = {
                 greet = helper
             }
 
-            -- Plain table literal with explicit `self`
+            // Plain table literal with explicit `self`
             let explicitGreeter: Greeter = {
-                greet = function(self: Greeter, name: string): string
+                greet = (self: Greeter, name: string) -> string => {
                     return $"Self({type(self)}): {name}"
-                end
+                }
             }
 
             let greeters: {Greeter} = { bot, human, arrowGreeter, varGreeter, explicitGreeter }

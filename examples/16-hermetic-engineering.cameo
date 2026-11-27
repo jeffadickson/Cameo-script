@@ -1,8 +1,8 @@
--- Flagship "Better Starlark" showcase: strictly hermetic (--hermetic) engineering
--- & financial BOM evaluator combining static records (required + optional fields),
--- interfaces, exhaustive enum match, List/Dict, comprehensions, deep freeze,
--- deterministic parallel.map, SharpUnits (ISO 80000 affine points + SIMD series),
--- and SharpSafeNumerics (IEEE Decimal64, Q32.32 Fixed64, SIMD checked integers).
+// Flagship "Better Starlark" showcase: strictly hermetic (--hermetic) engineering
+// & financial BOM evaluator combining static records (required + optional fields),
+// interfaces, exhaustive enum match, List/Dict, comprehensions, deep freeze,
+// deterministic parallel.map, SharpUnits (ISO 80000 affine points + SIMD series),
+// and SharpSafeNumerics (IEEE Decimal64, Q32.32 Fixed64, SIMD checked integers).
 
 enum RailClass {
     "Core",
@@ -69,11 +69,11 @@ let rails: List<RailSpec> = [
     }
 ]
 
--- Deep-freeze the BOM specification before sharing across deterministic workers.
+// Deep-freeze the BOM specification before sharing across deterministic workers.
 freeze(rails)
 print($"bom frozen: {isFrozen(rails)}")
 
--- Insertion-ordered Dict + direct for-in iteration.
+// Insertion-ordered Dict + direct for-in iteration.
 let byRail: Dict<string, SharpUnits.Quantity> = Dict.new()
 for r in rails {
     byRail.set(r.name, r.power())
@@ -82,11 +82,11 @@ for name, pwr in byRail {
     print($"rail {name}: {pwr}")
 }
 
--- List comprehension + exhaustive enum match.
+// List comprehension + exhaustive enum match.
 let criticalNames = [$"{r.name}({priorityLabel(r.rail)})" for r in rails if r.rail != "Aux"]
 print("critical rails: " .. table.concat(criticalNames.toTable(), ", "))
 
--- Exact IEEE 754 Decimal64 BOM pricing via Priced interface (zero binary-float drift).
+// Exact IEEE 754 Decimal64 BOM pricing via Priced interface (zero binary-float drift).
 var totalCost: safenum.Decimal64 = safenum.dec64("0.00")
 for r in rails {
     let priced: Priced = r
@@ -96,7 +96,7 @@ let taxRate = safenum.dec64("1.0825")
 let grandTotal = totalCost * taxRate
 print($"bom subtotal: ${totalCost}, with 8.25% tax: ${grandTotal}")
 
--- Deterministic parallel.map across workers transferring Quantity values.
+// Deterministic parallel.map across workers transferring Quantity values.
 let hourlyEnergy: List<SharpUnits.Quantity> = parallel.map(
     [r.power() for r in rails],
     (pwr: SharpUnits.Quantity) -> SharpUnits.Quantity => (pwr * units.qty(24, "h")).in_unit("kJ")
@@ -104,7 +104,7 @@ let hourlyEnergy: List<SharpUnits.Quantity> = parallel.map(
 let energySummary = [e.format("F2") for e in hourlyEnergy]
 print("24h energy (parallel.map): " .. table.concat(energySummary.toTable(), ", "))
 
--- ISO 80000 affine temperature & pressure safety + SIMD QuantitySeries telemetry.
+// ISO 80000 affine temperature & pressure safety + SIMD QuantitySeries telemetry.
 let ambient = units.point(25, "°C")
 let junction = units.point(85, "°C")
 let rise = junction - ambient
@@ -113,7 +113,7 @@ let samples = units.series([1.24, 1.25, 1.26, 1.25], "V")
 print($"thermal rise: {rise} (junction {string.format('%.1f', junction.to_fahrenheit().value)} °F)")
 print($"manifold absolute: {manifold.relative_to('vacuum').value} bar, core rail rms: {samples.rms().format('F4')}")
 
--- SafeNumerics SIMD checked integer batch & exact Q32.32 fixed-point derating factor.
+// SafeNumerics SIMD checked integer batch & exact Q32.32 fixed-point derating factor.
 let batch = safenum.intAddBatch([4, 6, 2], [1, 2, 1])
 let derate, derateErr = safenum.fixedFromRatio(3, 4)
 let _, inexactErr = safenum.fixedFromRatio(4, 5, "exact")

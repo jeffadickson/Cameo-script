@@ -87,6 +87,7 @@ public sealed partial class TypeChecker
 
     // per-check state
     private string _file = "?";
+    private bool _isCameo;
     private List<Diagnostic> _errors = new();
     private List<Diagnostic> _warnings = new();
     private Scope _scope;
@@ -191,6 +192,7 @@ public sealed partial class TypeChecker
     {
         // save state (Check may be re-entered through require)
         string sFile = _file;
+        bool sIsCameo = _isCameo;
         var sErr = _errors;
         var sWarn = _warnings;
         Scope sScope = _scope;
@@ -213,6 +215,7 @@ public sealed partial class TypeChecker
 
         var result = new CheckResult();
         _file = chunk.FileName;
+        _isCameo = chunk.IsCameo;
         _errors = result.Errors;
         _warnings = result.Warnings;
         LoadPragmas(chunk);
@@ -267,6 +270,7 @@ public sealed partial class TypeChecker
         _funcs.Clear();
         for (int i = sFuncs.Length - 1; i >= 0; i--) _funcs.Push(sFuncs[i]);
         _file = sFile;
+        _isCameo = sIsCameo;
         _errors = sErr;
         _warnings = sWarn;
         _scope = sScope;
@@ -515,15 +519,16 @@ public sealed partial class TypeChecker
     {
         _arityPragmas = null;
         string? src = chunk.Source;
-        if (src == null || !src.Contains("--#pragma")) return;
+        string prefix = chunk.IsCameo ? "//#pragma" : "--#pragma";
+        if (src == null || !src.Contains(prefix, StringComparison.Ordinal)) return;
         int ln = 0;
         foreach (string line in src.Split('\n'))
         {
             ln++;
             string t = line.TrimStart();
-            if (!t.StartsWith("--#pragma")) continue;
+            if (!t.StartsWith(prefix, StringComparison.Ordinal)) continue;
             int col = line.Length - t.Length + 1;
-            string[] parts = t.Substring(9).Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = t.Substring(prefix.Length).Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) { _errors.Add(new Diagnostic(_file, ln, col, "invalid pragma")); continue; }
             if (parts[0] != "arity")
             {

@@ -1,6 +1,6 @@
 fn finishReport(job: Future<string>, cached: string) -> Result<string, FutureError> {
     let report = try Result.fromPair(job.await(timeout: 0, cancelOnTimeout: true))
-        catch timeout { cached }
+    catch timeout { cached }
     return ok(report)
 }
 

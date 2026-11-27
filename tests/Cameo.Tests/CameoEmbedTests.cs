@@ -284,25 +284,25 @@ public sealed class CameoEmbedTests
                 let readback: integer = rv.base.read32()
                 dbg.expect_eq(readback, 0xCAFEBABE, 4)
 
-                -- Write 2 words via scratchpad burst_write32 and read back via Ptr
+                // Write 2 words via scratchpad burst_write32 and read back via Ptr
                 axi.scratch_set32(0, 0x10203040)
                 axi.scratch_set32(1, 0x50607080)
                 let n, ok = axi.burst_write32(base, 2, 0)
-                dbg.assert(ok and n == 2, 5)
+                dbg.assert(ok && n == 2, 5)
                 let w0 = base.read32()
                 let w1 = (base + 4).read32()
 
-                -- Fixed array (no dicts) + bitfield ops
+                // Fixed array (no dicts) + bitfield ops
                 let arr: {integer} = { dbg.popcount(0xF0F0), dbg.clz32(0x00010000), dbg.ctz32(0x00000080), dbg.bswap32(0x12345678) }
                 dbg.expect_eq(arr[1], 8, 6)
                 dbg.expect_eq(arr[2], 15, 7)
                 dbg.expect_eq(arr[3], 7, 8)
                 dbg.expect_eq(arr[4], 0x78563412, 9)
 
-                -- Read-only AXI window must deny write cleanly
+                // Read-only AXI window must deny write cleanly
                 let ro_ok = axi.write32(0x10010000, 123)
-                dbg.assert(not ro_ok, 10)
-                dbg.assert(not axi.window_check(0x10010002, 4, false), 11) -- unaligned
+                dbg.assert(!ro_ok, 10)
+                dbg.assert(!axi.window_check(0x10010002, 4, false), 11) // unaligned
                 dbg.assert(axi.window_check(0x10010000, 4, false), 12)
 
                 return w0 + w1 + dbg.set_bits(0x1100, 4, 4, 0xA)
@@ -426,11 +426,11 @@ public sealed class CameoEmbedTests
             export fn eval_ops(a: integer, b: integer, s: integer) -> integer {
                 var acc: integer = (a + b) - (a * 3)
                 if b != 0 {
-                    acc = acc ~ (a // b)
+                    acc = acc ^ (a ~/ b)
                     acc = acc + (a % b)
                 }
                 let sh = (s % 70) - 35
-                acc = acc ~ (a << sh) ~ (b >> sh)
+                acc = acc ^ (a << sh) ^ (b >> sh)
                 acc = acc & (~b | a)
                 let p: Ptr = ptr(0x20000000) + (math.abs(a) % 256)
                 let aligned: Ptr = p.align_up(8)
@@ -438,7 +438,7 @@ public sealed class CameoEmbedTests
                 let lsb: integer = math.abs(s) % 24
                 let width: integer = (math.abs(b) % 8) + 1
                 let bf: integer = dbg.bits(acc, lsb, width)
-                let rebuilt: integer = dbg.set_bits(acc, lsb, width, bf ~ 1)
+                let rebuilt: integer = dbg.set_bits(acc, lsb, width, bf ^ 1)
                 let sw: integer = dbg.bswap32(rebuilt)
                 return acc + off + bf + sw + dbg.popcount(rebuilt & 0xFFFF)
             }

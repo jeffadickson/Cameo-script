@@ -106,27 +106,27 @@ public class ScientificScriptingTests
 
             let checks = [
                 math.isnan(nanVal),
-                not math.isnan(1.0),
+                !math.isnan(1.0),
                 math.isinf(posInf),
                 math.isinf(negInf),
-                not math.isinf(42.0),
+                !math.isinf(42.0),
                 math.isfinite(42.0),
-                not math.isfinite(posInf),
-                not math.isfinite(nanVal),
+                !math.isfinite(posInf),
+                !math.isfinite(nanVal),
                 math.isclose(1.0, 1.0 + 1e-10),
-                not math.isclose(1.0, 1.01),
+                !math.isclose(1.0, 1.01),
                 math.isclose(1.0, 1.005, 0.01),
                 math.isclose(0.0, 1e-12, 1e-9, 1e-11),
                 math.isclose(posInf, posInf),
-                not math.isclose(posInf, negInf),
-                not math.isclose(nanVal, nanVal)
+                !math.isclose(posInf, negInf),
+                !math.isclose(nanVal, nanVal)
             ]
             var allOk = true
             for b in checks {
-                if not b { allOk = false }
+                if !b { allOk = false }
             }
 
-            -- Ambient math.random is absent in Hermetic mode, while explicit-seed math.rng works!
+            // Ambient math.random is absent in Hermetic mode, while explicit-seed math.rng works!
             let noAmbient = (math.random == nil)
             let r1 = math.rng(42)
             let r2 = math.rng(42)
@@ -138,7 +138,7 @@ public class ScientificScriptingTests
             let i2 = r2.int(10, 20)
             let sampleNormals = r1.normals(4000, 10.0, 2.0)
 
-            -- Freeze prevents advancing until cloned; Rng transfers across parallel.map
+            // Freeze prevents advancing until cloned; Rng transfers across parallel.map
             let baseRng = math.rng(999)
             freeze(baseRng)
             let okFrozenDraw = pcall(() => { baseRng.float() })
@@ -150,9 +150,9 @@ public class ScientificScriptingTests
                 [1, 2, 3],
                 (seed: integer) -> number => math.rng(seed).floats(100).mean()
             )
-            return allOk, noAmbient, a1 == a2 and a2 == a3, i1 == i2 and i1 >= 10 and i1 <= 20,
+            return allOk, noAmbient, a1 == a2 && a2 == a3, i1 == i2 && i1 >= 10 && i1 <= 20,
                    sampleNormals.mean(), sampleNormals.std(), okFrozenDraw,
-                   workerMeans[1] == workerMeansRepeat[1] and workerMeans[2] == workerMeansRepeat[2] and workerMeans[3] == workerMeansRepeat[3]
+                   workerMeans[1] == workerMeansRepeat[1] && workerMeans[2] == workerMeansRepeat[2] && workerMeans[3] == workerMeansRepeat[3]
             """;
 
         Proto proto = engine.Compile(src, "rng.cameo");
@@ -245,7 +245,7 @@ public class ScientificScriptingTests
                 let q1 = a.quantile(1.0)
                 let r1 = math.rng({{t.seed}})
                 let r2 = r1.clone()
-                let sameRng = (r1.float() == r2.float()) and (r1.int(-100, 100) == r2.int(-100, 100))
+                let sameRng = (r1.float() == r2.float()) && (r1.int(-100, 100) == r2.int(-100, 100))
                 return cs[#cs], df.sum(), q0, q1, sameRng
                 """);
 

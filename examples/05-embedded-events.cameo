@@ -1,10 +1,10 @@
--- The host supplies the asynchronous operation; only the owner thread touches VM state.
+// The host supplies the asynchronous operation; only the owner thread touches VM state.
 global fetch_data: function(): Future<integer>
 fn runWork() -> integer {
     let value = fetch_data().get()
     return value * 2
 }
 
--- Export the lexical function under the name expected by the managed host.
+// Export the lexical function under the name expected by the managed host.
 global work: function(): integer = runWork
 global formatResult: function(integer): string = (value) => $"Result: {value}"

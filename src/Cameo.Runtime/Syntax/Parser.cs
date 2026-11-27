@@ -46,9 +46,9 @@ public sealed partial class Parser
 
     /// <summary>Parses a single expression (used to instantiate <c>where</c> clauses).
     /// Positions are reported relative to the given line.</summary>
-    public static Expr ParseExpression(string source, string fileName, int line = 1)
+    public static Expr ParseExpression(string source, string fileName, int line = 1, bool cameo = false)
     {
-        var p = new Parser(source, fileName);
+        var p = new Parser(source, fileName, cameo);
         foreach (Token t in p._toks) t.Line += line - 1;
         Expr e = p.ParseExpr();
         if (p.Cur.Kind != TokenKind.Eof) throw p.Error("unexpected '" + p.Cur + "' after expression");
@@ -145,7 +145,7 @@ public sealed partial class Parser
                 body.Stats.Add(new ReturnStat { Values = [tbl], Line = first.Line, Col = first.Col });
             }
             var main = At(new FunctionBody { Name = "main chunk", IsVarArg = true, Body = body, EndLine = Cur.Line }, first);
-            return At(new Chunk { FileName = _file, Body = body, Main = main, Source = _src, CameoExports = exports }, first);
+            return At(new Chunk { FileName = _file, Body = body, Main = main, Source = _src, CameoExports = exports, IsCameo = _allowExpressionFunctions }, first);
         }
         finally
         {
@@ -158,6 +158,7 @@ public sealed partial class Parser
     {
         Token t = Cur;
         if (t.Kind == TokenKind.Eof || (_inBraceBlock && IsOp("}"))) return true;
+        if (_allowExpressionFunctions) return false;
         if (t.Kind != TokenKind.Keyword) return false;
         return t.Text is "end" or "else" or "elseif" or "until";
     }
@@ -290,7 +291,8 @@ public sealed partial class Parser
         if (AtCameoDeclaration("record")) return ParseCameoRecord();
         if (AtCameoDeclaration("interface")) return ParseCameoInterface(isGlobal: false);
         if (AtCameoDeclaration("enum") && TokIsOp(PeekTok(2), "{")) return ParseCameoEnum();
-        if (AtClassDeclaration()) RewriteClass(); // a class becomes a record, a metatable and functions
+        if (AtCameoTypeAlias()) return ParseCameoTypeAlias(isGlobal: false);
+        if (!_allowExpressionFunctions && AtClassDeclaration()) RewriteClass(); // a class becomes a record, a metatable and functions
         Token t = Cur;
         if (t.Kind == TokenKind.Op)
         {
@@ -320,21 +322,33 @@ public sealed partial class Parser
                     {
                         _p++;
                         Block body;
-                        if (_allowExpressionFunctions && IsOp("{")) body = ParseBraceBlock();
+                        if (_allowExpressionFunctions)
+                        {
+                            if (!IsOp("{")) throw Error("use 'do { ... }' instead of 'do ... end' in Cameo", t);
+                            body = ParseBraceBlock();
+                        }
                         else { body = ParseBlock(); ExpectClose("end", "do", t); }
                         return At(new DoStat { Body = body }, t);
                     }
                 case "for": return ParseFor();
                 case "repeat":
                     {
+                        if (_allowExpressionFunctions)
+                            throw Error("'repeat ... until' is not supported in Cameo; use 'while' with '{ ... }'", t);
                         _p++;
                         Block body = ParseBlock();
                         ExpectClose("until", "repeat", t);
                         Expr cond = ParseExpr();
                         return At(new RepeatStat { Body = body, Cond = cond }, t);
                     }
-                case "function": return ParseFunctionStat();
-                case "local": return ParseLocal();
+                case "function":
+                    if (_allowExpressionFunctions)
+                        throw Error("use 'fn name(...) { ... }' instead of 'function ... end' in Cameo", t);
+                    return ParseFunctionStat();
+                case "local":
+                    if (_allowExpressionFunctions)
+                        throw Error("use 'let' (immutable) or 'var' (mutable) instead of 'local' in Cameo", t);
+                    return ParseLocal();
                 case "break": _p++; return At(new BreakStat { Label = LoopLabel(t) }, t);
                 case "goto":
                     {
@@ -342,6 +356,14 @@ public sealed partial class Parser
                         Token n = ExpectName();
                         return At(new GotoStat { Label = n.Text }, t);
                     }
+                case "end" when _allowExpressionFunctions:
+                    throw Error("use '}' instead of 'end' in Cameo", t);
+                case "then" when _allowExpressionFunctions:
+                    throw Error("use '{ ... }' instead of 'then ... end' in Cameo", t);
+                case "elseif" when _allowExpressionFunctions:
+                    throw Error("use 'else if' instead of 'elseif' in Cameo", t);
+                case "until" when _allowExpressionFunctions:
+                    throw Error("'repeat ... until' is not supported in Cameo; use 'while' with '{ ... }'", t);
             }
         }
         else if (t.Kind == TokenKind.Name && t.Text == "global" && IsGlobalDecl())
@@ -363,7 +385,11 @@ public sealed partial class Parser
         Token t = ExpectKw("if");
         var s = At(new IfStat(), t);
         Expr cond = ParseControlExpr("then");
-        if (_allowExpressionFunctions && IsOp("{")) return ParseCameoIfRest(t, s, cond);
+        if (_allowExpressionFunctions)
+        {
+            if (IsKw("then")) throw Error("use '{ ... }' instead of 'then ... end' in Cameo", Cur);
+            return ParseCameoIfRest(t, s, cond);
+        }
         ExpectKw("then");
         s.Clauses.Add((cond, ParseBlock()));
         while (true)
@@ -502,12 +528,16 @@ public sealed partial class Parser
         Token t = _toks[_p++]; // 'global'
         if (IsKw("function"))
         {
+            if (_allowExpressionFunctions)
+                throw Error("use 'global name: fn(...) -> ... = ...' or 'fn' instead of 'global function ... end' in Cameo", t);
             _p++;
             Token n = ExpectName();
             var s = At(new GlobalFunctionStat { Name = n.Text }, t);
             s.Body = ParseFunctionBody(t, n.Text, false);
             return s;
         }
+        if (_allowExpressionFunctions && IsName("enum") && TokIsName(PeekTok()) && TokIsOp(PeekTok(2), "{"))
+            return ParseCameoEnum(isGlobal: true);
         Stat? td = TryParseTypeDecl(t, true);
         if (td != null) return td;
         var g = At(new GlobalStat(), t);
@@ -524,6 +554,8 @@ public sealed partial class Parser
         string word = Cur.Text;
         if (TypeDeclWords.Contains(word))
         {
+            if (_allowExpressionFunctions)
+                throw Error($"use '{word} Name {{ ... }}' instead of '{word} Name ... end' in Cameo", Cur);
             _p++;
             Token n = ExpectName();
             var s = At(new TypeDeclStat { IsGlobal = isGlobal, Name = At(new AttribName { Name = n.Text }, n) }, start);
@@ -614,12 +646,12 @@ public sealed partial class Parser
         if (next.Kind == TokenKind.String || next.Kind == TokenKind.Interp) return false;
         if (next.Kind != TokenKind.Op) return true;
         return next.Text is not ("=" or "," or "." or ":" or "(" or "[" or "{"
-            or "+=" or "-=" or "*=" or "/=" or "//=" or "%=" or "^=" or "..=" or "&=" or "|=" or "<<=" or ">>=");
+            or "+=" or "-=" or "*=" or "/=" or "//=" or "~/=" or "%=" or "^=" or "**=" or "..=" or "&=" or "|=" or "<<=" or ">>=");
     }
 
     private static bool ContinuesExpression(Token t) =>
         t.Kind == TokenKind.String || t.Kind == TokenKind.Interp || (t.Kind == TokenKind.Op && t.Text is "=" or "," or "." or ":" or "(" or "[" or "{"
-            or "+=" or "-=" or "*=" or "/=" or "//=" or "%=" or "^=" or "..=" or "&=" or "|=" or "<<=" or ">>=");
+            or "+=" or "-=" or "*=" or "/=" or "//=" or "~/=" or "%=" or "^=" or "**=" or "..=" or "&=" or "|=" or "<<=" or ">>=");
 
     // After `break` or `continue`: the name of the labelled loop to act on, if one follows on the
     // same line (`break outer`). A name on the next line, or one that starts a statement of its
@@ -630,7 +662,7 @@ public sealed partial class Parser
         return _toks[_p++].Text;
     }
 
-    private static bool CompoundOp(string text, out BinaryOp op)
+    private bool CompoundOp(string text, out BinaryOp op)
     {
         switch (text)
         {
@@ -638,9 +670,11 @@ public sealed partial class Parser
             case "-=": op = BinaryOp.Sub; return true;
             case "*=": op = BinaryOp.Mul; return true;
             case "/=": op = BinaryOp.Div; return true;
-            case "//=": op = BinaryOp.IDiv; return true;
+            case "//=" when !_allowExpressionFunctions: op = BinaryOp.IDiv; return true;
+            case "~/=" when _allowExpressionFunctions: op = BinaryOp.IDiv; return true;
             case "%=": op = BinaryOp.Mod; return true;
-            case "^=": op = BinaryOp.Pow; return true;
+            case "^=": op = _allowExpressionFunctions ? BinaryOp.BXor : BinaryOp.Pow; return true;
+            case "**=" when _allowExpressionFunctions: op = BinaryOp.Pow; return true;
             case "..=": op = BinaryOp.Concat; return true;
             case "&=": op = BinaryOp.BAnd; return true;
             case "|=": op = BinaryOp.BOr; return true;
@@ -722,7 +756,7 @@ public sealed partial class Parser
             }
             try
             {
-                List<Token> toks = Lexer.Tokenize(text, _file);
+                List<Token> toks = Lexer.Tokenize(text, _file, _allowExpressionFunctions);
                 foreach (Token st in toks) { st.Line = t.Line; st.Col = t.Col; }
                 var sub = new Parser(toks, this);
                 args.Add(sub.ParseExpr());
@@ -870,12 +904,52 @@ public sealed partial class Parser
         return list;
     }
 
-    private const int UnaryPriority = 12;
     private const int IsPriority = 3;
+    private const int CameoIsPriority = 5;
+    private const int CameoComparePriority = 6;
+    private const int CameoUnaryLimit = 15;
 
     private bool BinaryInfo(Token t, out BinaryOp op, out int left, out int right)
     {
         op = default; left = right = 0;
+        if (_allowExpressionFunctions)
+        {
+            if (t.Kind == TokenKind.Keyword)
+            {
+                if (t.Text == "and") throw Error("use '&&' instead of 'and' in Cameo", t);
+                if (t.Text == "or") throw Error("use '||' instead of 'or' in Cameo", t);
+                return false;
+            }
+            if (t.Kind != TokenKind.Op) return false;
+            switch (t.Text)
+            {
+                case "??": op = BinaryOp.Coalesce; left = 2; right = 1; return true;
+                case "||": op = BinaryOp.Or; left = right = 3; return true;
+                case "&&": op = BinaryOp.And; left = right = 4; return true;
+                case "<": op = BinaryOp.Lt; left = right = CameoComparePriority; return true;
+                case ">": op = BinaryOp.Gt; left = right = CameoComparePriority; return true;
+                case "<=": op = BinaryOp.Le; left = right = CameoComparePriority; return true;
+                case ">=": op = BinaryOp.Ge; left = right = CameoComparePriority; return true;
+                case "!=": op = BinaryOp.Ne; left = right = CameoComparePriority; return true;
+                case "==": op = BinaryOp.Eq; left = right = CameoComparePriority; return true;
+                case "~=": throw Error("use '!=' instead of '~=' in Cameo", t);
+                case "|": op = BinaryOp.BOr; left = right = 7; return true;
+                case "^": op = BinaryOp.BXor; left = right = 8; return true;
+                case "~": throw Error("use '^' for bitwise XOR in Cameo ('~' is unary bitwise NOT)", t);
+                case "&": op = BinaryOp.BAnd; left = right = 9; return true;
+                case "<<": op = BinaryOp.Shl; left = right = 10; return true;
+                case ">>": op = BinaryOp.Shr; left = right = 10; return true;
+                case "..": op = BinaryOp.Concat; left = 12; right = 11; return true;
+                case "+": op = BinaryOp.Add; left = right = 13; return true;
+                case "-": op = BinaryOp.Sub; left = right = 13; return true;
+                case "*": op = BinaryOp.Mul; left = right = 14; return true;
+                case "/": op = BinaryOp.Div; left = right = 14; return true;
+                case "~/": op = BinaryOp.IDiv; left = right = 14; return true;
+                case "%": op = BinaryOp.Mod; left = right = 14; return true;
+                case "**": op = BinaryOp.Pow; left = 17; right = 16; return true;
+            }
+            return false;
+        }
         if (t.Kind == TokenKind.Keyword)
         {
             if (t.Text == "or") { op = BinaryOp.Or; left = right = 1; return true; }
@@ -885,13 +959,11 @@ public sealed partial class Parser
         if (t.Kind != TokenKind.Op) return false;
         switch (t.Text)
         {
-            case "??" when _allowExpressionFunctions: op = BinaryOp.Coalesce; left = right = 2; return true;
             case "<": op = BinaryOp.Lt; left = right = 4; return true;
             case ">": op = BinaryOp.Gt; left = right = 4; return true;
             case "<=": op = BinaryOp.Le; left = right = 4; return true;
             case ">=": op = BinaryOp.Ge; left = right = 4; return true;
             case "~=": op = BinaryOp.Ne; left = right = 4; return true;
-            case "!=" when _allowExpressionFunctions: op = BinaryOp.Ne; left = right = 4; return true;
             case "==": op = BinaryOp.Eq; left = right = 4; return true;
             case "|": op = BinaryOp.BOr; left = right = 5; return true;
             case "~": op = BinaryOp.BXor; left = right = 6; return true;
@@ -950,17 +1022,22 @@ public sealed partial class Parser
         Expr left;
         Token t = Cur;
         UnaryOp? uop = null;
-        if (t.Kind == TokenKind.Keyword && t.Text == "not") uop = UnaryOp.Not;
+        if (t.Kind == TokenKind.Keyword && t.Text == "not")
+        {
+            if (_allowExpressionFunctions) throw Error("use '!' instead of 'not' in Cameo", t);
+            uop = UnaryOp.Not;
+        }
         else if (t.Kind == TokenKind.Op)
         {
-            if (t.Text == "-") uop = UnaryOp.Neg;
+            if (_allowExpressionFunctions && t.Text == "!") uop = UnaryOp.Not;
+            else if (t.Text == "-") uop = UnaryOp.Neg;
             else if (t.Text == "#") uop = UnaryOp.Len;
             else if (t.Text == "~") uop = UnaryOp.BNot;
         }
         if (uop != null)
         {
             _p++;
-            Expr operand = ParseSubExpr(13);
+            Expr operand = ParseSubExpr(_allowExpressionFunctions ? CameoUnaryLimit : 13);
             // fold negative numeric literals
             if (uop == UnaryOp.Neg && operand is NumberExpr ne)
             {
@@ -972,26 +1049,27 @@ public sealed partial class Parser
         }
         else left = ParseSimpleExpr();
 
+        int isPrio = _allowExpressionFunctions ? CameoIsPriority : IsPriority;
         while (true)
         {
             Token ot = Cur;
-            if (ot.Kind == TokenKind.Name && ot.Text == "is" && IsPriority > limit)
+            if (ot.Kind == TokenKind.Name && ot.Text == "is" && isPrio > limit)
             {
                 _p++;
                 TypeNode ty = ParseType();
-                // `not x is T` means `not (x is T)`, as in the reference implementation
+                // `!x is T` / `not x is T` means `!(x is T)`
                 if (uop == UnaryOp.Not && left is UnaryExpr { Op: UnaryOp.Not } notExpr)
                     notExpr.Operand = At(new IsExpr { Inner = notExpr.Operand, Type = ty }, ot);
                 else
                     left = At(new IsExpr { Inner = left, Type = ty }, ot);
                 continue;
             }
-            if (_allowExpressionFunctions && 4 > limit && ot.Kind == TokenKind.Op
+            if (_allowExpressionFunctions && CameoComparePriority > limit && ot.Kind == TokenKind.Op
                 && (ot.Text == "=" || ot.Text == "!") && TokIsOp(PeekTok(), "~") && ot.End == PeekTok().Pos)
             {
                 bool negate = ot.Text == "!";
                 _p += 2;
-                Expr right = ParseSubExpr(4);
+                Expr right = ParseSubExpr(CameoComparePriority);
                 left = LowerCameoRegexMatch(left, right, ot, negate);
                 uop = null;
                 continue;
@@ -1042,6 +1120,8 @@ public sealed partial class Parser
                 e = At(new BoolExpr { Value = false }, t);
                 break;
             case TokenKind.Keyword when t.Text == "function":
+                if (_allowExpressionFunctions)
+                    throw Error("use '(...) => ...' or '(...) => { ... }' instead of 'function(...) ... end' in Cameo", t);
                 _p++;
                 e = At(new FunctionExpr { Body = ParseFunctionBody(t, "anonymous", false) }, t);
                 break;
@@ -1121,7 +1201,7 @@ public sealed partial class Parser
         if (t.Kind == TokenKind.Name)
         {
             _p++;
-            if (IsOp("!")) return ParseMacroCall(t);
+            if (IsOp("!") && t.End == Cur.Pos && !TokIsOp(PeekTok(), "~")) return ParseMacroCall(t);
             return At(new NameExpr { Name = t.Text }, t);
         }
         if (IsOp("("))
@@ -1471,6 +1551,8 @@ public sealed partial class Parser
         }
         else if (t.Kind == TokenKind.Name)
         {
+            if (_allowExpressionFunctions && t.Text == "fn" && (TokIsOp(PeekTok(), "(") || TokIsOp(PeekTok(), "<")))
+                return ParseFunctionType(cameoFn: true);
             _p++;
             var n = At(new NameTypeNode(), t);
             n.Names.Add(t.Text);
@@ -1506,9 +1588,9 @@ public sealed partial class Parser
         }
     }
 
-    private TypeNode ParseFunctionType()
+    private TypeNode ParseFunctionType(bool cameoFn = false)
     {
-        Token t = ExpectKw("function");
+        Token t = cameoFn ? _toks[_p++] : ExpectKw("function");
         var f = At(new FunctionTypeNode(), t);
         if (IsOp("<")) f.TypeParams = ParseTypeParams();
         if (!IsOp("("))
@@ -1553,7 +1635,8 @@ public sealed partial class Parser
             } while (AcceptOp(","));
         }
         ExpectClose(")", "(", open);
-        if (AcceptOp(":")) ParseReturnTypes(f.Returns, out f.ReturnsVarArg);
+        if (cameoFn ? AcceptCameoReturnArrow() : (AcceptOp(":") || (_allowExpressionFunctions && AcceptCameoReturnArrow())))
+            ParseReturnTypes(f.Returns, out f.ReturnsVarArg);
         return f;
     }
 
@@ -1599,12 +1682,12 @@ public sealed partial class Parser
             if ((t.Text == "record" || t.Text == "interface") && bodyFollows)
             {
                 _p++;
-                return ParseRecordBody(t, t.Text == "interface");
+                return ParseRecordBody(t, t.Text == "interface", braced: _allowExpressionFunctions);
             }
             if (t.Text == "enum" && bodyFollows)
             {
                 _p++;
-                return ParseEnumBody(t);
+                return ParseEnumBody(t, braced: _allowExpressionFunctions);
             }
             if (t.Text == "require" && TokIsOp(nx, "("))
             {
@@ -1620,15 +1703,18 @@ public sealed partial class Parser
         return ParseType();
     }
 
-    private EnumTypeNode ParseEnumBody(Token start)
+    private EnumTypeNode ParseEnumBody(Token start, bool braced = false)
     {
         var e = At(new EnumTypeNode(), start);
+        Token? open = braced ? ExpectOp("{") : null;
         while (Cur.Kind == TokenKind.String)
         {
             e.Values.Add(Cur.Text);
             _p++;
+            if (braced) AcceptOp(",");
         }
-        ExpectClose("end", "enum", start);
+        if (braced) ExpectClose("}", "{", open!);
+        else ExpectClose("end", "enum", start);
         return e;
     }
 
@@ -1744,13 +1830,13 @@ public sealed partial class Parser
                     if ((t.Text == "record" || t.Text == "interface") && TokIsName(nx))
                     {
                         _p += 2;
-                        r.NestedTypes.Add(At(new NestedTypeDecl { Name = nx.Text, Def = ParseRecordBody(nx, t.Text == "interface") }, t));
+                        r.NestedTypes.Add(At(new NestedTypeDecl { Name = nx.Text, Def = ParseRecordBody(nx, t.Text == "interface", braced: braced && _allowExpressionFunctions) }, t));
                         continue;
                     }
                     if (t.Text == "enum" && TokIsName(nx))
                     {
                         _p += 2;
-                        r.NestedTypes.Add(At(new NestedTypeDecl { Name = nx.Text, Def = ParseEnumBody(nx) }, t));
+                        r.NestedTypes.Add(At(new NestedTypeDecl { Name = nx.Text, Def = ParseEnumBody(nx, braced: braced && _allowExpressionFunctions) }, t));
                         continue;
                     }
                     if (t.Text is "private" or "protected" && (nx.Kind is TokenKind.Name or TokenKind.Keyword) && TokIsOp(PeekTok(2), ":"))
