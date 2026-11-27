@@ -227,6 +227,22 @@ public sealed class InstType : TType
     public override string Show() => Def.Name + "<" + string.Join(", ", Args.Select(a => a.Show())) + ">";
 }
 
+/// <summary>
+/// A dimension-tagged <c>SharpUnits.Quantity</c>, <c>SymbolicUnit</c>, or <c>QuantitySeries</c>
+/// carrying its compile-time <see cref="PhysicalDimension"/> while erasing cleanly to <see cref="Def"/>.
+/// </summary>
+public sealed class QuantityType : TType
+{
+    public RecordType Def { get; }
+    public PhysicalDimension Dimension { get; }
+    public QuantityType(RecordType def, PhysicalDimension dimension)
+    {
+        Def = def;
+        Dimension = dimension;
+    }
+    public override string Show() => $"{Def.Name}<{Dimension.DisplayName}>";
+}
+
 /// <summary>The type of <c>{}</c> before its use determines an array/map type.</summary>
 public sealed class EmptyTableType : TType
 {

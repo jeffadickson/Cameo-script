@@ -82,8 +82,18 @@ engine.DefineValue("weights", new[] { 1.5, 2.5, 3.0 });
 - `Expose(name, target)` exposes public properties as live fields and public methods as
   bound functions (camelCase by default; override with `[Expose("...")]` or exclude with
   `[Hide]`; overloads, generics, and `ref`/`Span` parameters throw `ArgumentException`).
-- `DefineValue(name, value)` converts a .NET value into a typed global; returned sequences
-  poll the VM step/abort budget per element so unbounded `IEnumerable<T>` stops cleanly.
+- `DefineValue(name, value)` converts a .NET value into a typed global (including
+  `SharpUnits.Quantity<double>`, preserving its compile-time physical dimension); returned
+  sequences poll the VM step/abort budget per element so unbounded `IEnumerable<T>` stops
+  cleanly.
+- `[Unit("Ohm")]` (`Cameo.Runtime.Interop.UnitAttribute`) annotates host `double`/`float`/`decimal`
+  parameters (or sequences like `double[]`, or direct `SharpUnits.Quantity<double>` parameters and
+  return values) with a physical unit expression. On numeric parameters (`AllowNumber = true` by
+  default), Cameo scripts may pass either a plain `number` (interpreted in the target unit) or a
+  dimensionally compatible `SharpUnits.Quantity` (automatically converted into the target unit at
+  runtime), while incompatible dimensions (such as Volts passed to an `"Ohm"` parameter) are
+  rejected at compile time by the Cameo type checker. Set `AllowNumber = false` to require a
+  `SharpUnits.Quantity` exclusively.
 - `DeclareGlobal(tealDeclaration)` adds custom static declarations directly to the checker.
 
 For low-level `State.SetGlobal` bindings that bypass `Register`/`Expose`, declare globals

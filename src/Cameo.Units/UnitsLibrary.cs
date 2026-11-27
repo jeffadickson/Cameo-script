@@ -1,4 +1,6 @@
 using Cameo.Runtime;
+using Cameo.Runtime.Interop;
+using Cameo.Runtime.Types;
 using SharpUnits;
 using SharpUnits.Interop.Lua;
 using Cameo.Runtime.Vm;
@@ -14,6 +16,8 @@ namespace Cameo.Units;
 public static class UnitsLibrary
 {
     private static readonly LuaUnitsBridge Bridge = new();
+    private static readonly SharpUnitsDimensionResolver DimensionResolver = new();
+    private static readonly SharpUnitsHostTypeMarshaller HostMarshaller = new();
 
     private const string MetaUnit = "SharpUnits.SymbolicUnit";
     private const string MetaQuantity = "SharpUnits.Quantity";
@@ -24,6 +28,7 @@ public static class UnitsLibrary
     public static void Enable(ScriptEngine engine)
     {
         ArgumentNullException.ThrowIfNull(engine);
+        engine.SetUnitDimensionResolver(DimensionResolver);
         engine.State.RegisterExtension(Open);
     }
 
@@ -31,6 +36,7 @@ public static class UnitsLibrary
     public static void Open(LuaState L)
     {
         ArgumentNullException.ThrowIfNull(L);
+        L.RegisterHostTypeMarshaller(HostMarshaller);
         CopyMeta(BuildUnitMeta(L), L.MetaFor(MetaUnit));
         CopyMeta(BuildQuantityMeta(L), L.MetaFor(MetaQuantity));
         CopyMeta(BuildPointMeta(L), L.MetaFor(MetaPoint));
@@ -46,8 +52,13 @@ public static class UnitsLibrary
         L.Register(lib, "qty", static (ref CallContext c) =>
         {
             double val = c.CheckNumber(0);
-            string expr = c.CheckText(1);
-            try { return c.Return(Wrap(c.L, Bridge.Qty(val, expr))); }
+            try
+            {
+                if (c[1].O is LuaUnit lu)
+                    return c.Return(Wrap(c.L, Quantity<double>.Of(val, lu.Unit)));
+                string expr = c.CheckText(1);
+                return c.Return(Wrap(c.L, Bridge.Qty(val, expr)));
+            }
             catch (Exception ex) when (ex is not LuaException) { throw new LuaException($"units: {ex.Message}"); }
         });
         L.Register(lib, "parse", static (ref CallContext c) =>
@@ -79,6 +90,189 @@ public static class UnitsLibrary
         L.LoadedModules.SetStr("sharpunits", lib);
     }
 
+    private static bool TryToPhysicalDimension(RationalDimension d, out PhysicalDimension result)
+    {
+        if (d.Length.IsInteger && d.Mass.IsInteger && d.Time.IsInteger && d.Current.IsInteger &&
+            d.Temperature.IsInteger && d.Amount.IsInteger && d.Luminosity.IsInteger)
+        {
+            result = new PhysicalDimension(
+                checked((int)d.Length.Numerator),
+                checked((int)d.Mass.Numerator),
+                checked((int)d.Time.Numerator),
+                checked((int)d.Current.Numerator),
+                checked((int)d.Temperature.Numerator),
+                checked((int)d.Amount.Numerator),
+                checked((int)d.Luminosity.Numerator));
+            return true;
+        }
+        result = default;
+        return false;
+    }
+
+    private static string FormatDimensionName(RationalDimension d) =>
+        TryToPhysicalDimension(d, out PhysicalDimension pd) ? pd.DisplayName : d.ToCoherentSiSymbol();
+
+    private sealed class SharpUnitsDimensionResolver : IUnitDimensionResolver
+    {
+        public bool TryResolveUnitDimension(string unitExpression, out PhysicalDimension? dimension, out string? error)
+        {
+            try
+            {
+                SymbolicUnit u = Bridge.Unit(unitExpression);
+                dimension = TryToPhysicalDimension(u.Dimension, out PhysicalDimension pd) ? pd : null;
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                dimension = null;
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public bool TryResolveQuantityLiteralDimension(string quantityLiteral, out PhysicalDimension? dimension, out string? error)
+        {
+            try
+            {
+                Quantity<double> q = Bridge.Parse(quantityLiteral);
+                dimension = TryToPhysicalDimension(q.Unit.Dimension, out PhysicalDimension pd) ? pd : null;
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                dimension = null;
+                error = ex.Message;
+                return false;
+            }
+        }
+    }
+
+    private sealed class SharpUnitsHostTypeMarshaller : IHostTypeMarshaller
+    {
+        public bool CanMarshal(Type clrType) =>
+            clrType == typeof(Quantity<double>) ||
+            clrType == typeof(Quantity) ||
+            clrType == typeof(SymbolicUnit) ||
+            clrType == typeof(QuantityPoint<double>) ||
+            clrType == typeof(QuantitySeries<double>);
+
+        public string GetTealType(Type clrType, UnitAttribute? unitAttr)
+        {
+            if (clrType == typeof(Quantity<double>) || clrType == typeof(Quantity))
+                return unitAttr != null
+                    ? $"SharpUnits.Quantity<\"{Escape(unitAttr.Unit)}\">"
+                    : "SharpUnits.Quantity";
+            if (clrType == typeof(SymbolicUnit))
+                return unitAttr != null
+                    ? $"SharpUnits.SymbolicUnit<\"{Escape(unitAttr.Unit)}\">"
+                    : "SharpUnits.SymbolicUnit";
+            if (clrType == typeof(QuantityPoint<double>))
+                return "SharpUnits.QuantityPoint";
+            if (clrType == typeof(QuantitySeries<double>))
+                return unitAttr != null
+                    ? $"SharpUnits.QuantitySeries<\"{Escape(unitAttr.Unit)}\">"
+                    : "SharpUnits.QuantitySeries";
+            return "any";
+        }
+
+        public string GetTealValueType(object value, Type runtimeType)
+        {
+            if (value is Quantity<double> q)
+                return FormatQuantityTealType("SharpUnits.Quantity", q.Unit);
+            if (value is Quantity nq)
+                return FormatQuantityTealType("SharpUnits.Quantity", nq.AsGeneric<double>().Unit);
+            if (value is SymbolicUnit su)
+                return FormatQuantityTealType("SharpUnits.SymbolicUnit", su);
+            if (value is QuantityPoint<double>)
+                return "SharpUnits.QuantityPoint";
+            if (value is QuantitySeries<double> qs)
+                return FormatQuantityTealType("SharpUnits.QuantitySeries", qs.Unit);
+            return GetTealType(runtimeType, null);
+        }
+
+        public object? FromLuaValue(LuaState state, Value value, Type targetType, UnitAttribute? unitAttr, string label, int argIndex)
+        {
+            if (targetType == typeof(Quantity<double>) || targetType == typeof(Quantity))
+            {
+                if (value.O is not LuaQuantity lq)
+                    throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected SharpUnits.Quantity, got {value.TypeName})");
+                if (unitAttr != null)
+                {
+                    SymbolicUnit target = Bridge.Unit(unitAttr.Unit);
+                    if (lq.Qty.Unit.Dimension != target.Dimension)
+                    {
+                        throw new LuaException(
+                            $"{label}: bad argument #{argIndex + 1} (incompatible physical dimensions: got {FormatDimensionName(lq.Qty.Unit.Dimension)} ({lq.Qty.Unit.Symbol}), expected {FormatDimensionName(target.Dimension)} ({target.Symbol}))");
+                    }
+                }
+                return targetType == typeof(Quantity) ? lq.Qty.ToQuantity() : lq.Qty;
+            }
+            if (targetType == typeof(SymbolicUnit))
+            {
+                if (value.O is not LuaUnit lu)
+                    throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected SharpUnits.SymbolicUnit, got {value.TypeName})");
+                if (unitAttr != null)
+                {
+                    SymbolicUnit target = Bridge.Unit(unitAttr.Unit);
+                    if (lu.Unit.Dimension != target.Dimension)
+                    {
+                        throw new LuaException(
+                            $"{label}: bad argument #{argIndex + 1} (incompatible physical dimensions: got {FormatDimensionName(lu.Unit.Dimension)} ({lu.Unit.Symbol}), expected {FormatDimensionName(target.Dimension)} ({target.Symbol}))");
+                    }
+                }
+                return lu.Unit;
+            }
+            if (targetType == typeof(QuantityPoint<double>))
+            {
+                if (value.O is not LuaPoint lp)
+                    throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected SharpUnits.QuantityPoint, got {value.TypeName})");
+                return lp.Point;
+            }
+            if (targetType == typeof(QuantitySeries<double>))
+            {
+                if (value.O is not LuaSeries ls)
+                    throw new LuaException($"{label}: bad argument #{argIndex + 1} (expected SharpUnits.QuantitySeries, got {value.TypeName})");
+                if (unitAttr != null)
+                {
+                    SymbolicUnit target = Bridge.Unit(unitAttr.Unit);
+                    if (ls.Series.Unit.Dimension != target.Dimension)
+                    {
+                        throw new LuaException(
+                            $"{label}: bad argument #{argIndex + 1} (incompatible physical dimensions: got {FormatDimensionName(ls.Series.Unit.Dimension)} ({ls.Series.Unit.Symbol}), expected {FormatDimensionName(target.Dimension)} ({target.Symbol}))");
+                    }
+                }
+                return ls.Series;
+            }
+            throw new LuaException($"{label}: cannot convert argument #{argIndex + 1} to {targetType.Name}");
+        }
+
+        public Value ToLuaValue(LuaState state, object value, Type declaredType) => value switch
+        {
+            Quantity<double> q => Wrap(state, q),
+            Quantity nq => Wrap(state, nq.AsGeneric<double>()),
+            SymbolicUnit u => Wrap(state, u),
+            QuantityPoint<double> p => Wrap(state, p),
+            QuantitySeries<double> s => Wrap(state, s),
+            _ => throw new LuaException($"cannot convert host value of type '{declaredType.Name}' to SharpUnits value"),
+        };
+
+        private static string Escape(string s) =>
+            s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
+        private static string FormatQuantityTealType(string baseName, SymbolicUnit u)
+        {
+            string? sym = !string.IsNullOrWhiteSpace(u.AsciiSymbol) ? u.AsciiSymbol : u.Symbol;
+            if (!string.IsNullOrWhiteSpace(sym) &&
+                TryToPhysicalDimension(u.Dimension, out var udim) &&
+                DimensionResolver.TryResolveUnitDimension(sym, out var dim, out _) &&
+                dim == udim)
+                return $"{baseName}<\"{Escape(sym)}\">";
+            return baseName;
+        }
+    }
+
     // ------------------------------------------------------------------ userdata wrappers
 
     private sealed class LuaUnit : IUserdata, IFreezable, IValueTransferable
@@ -93,15 +287,40 @@ public static class UnitsLibrary
         public override string ToString() => Unit.Symbol;
     }
 
-    private sealed class LuaQuantity : IUserdata, IFreezable, IValueTransferable
+    private sealed class LuaQuantity : IUserdata, IFreezable, IValueTransferable, IHostQuantity
     {
         public readonly Quantity<double> Qty;
         public Table? Metatable { get; set; }
         public string TypeName => MetaQuantity;
+        public PhysicalDimension Dimension => TryToPhysicalDimension(Qty.Unit.Dimension, out var pd) ? pd : default;
+        public string UnitSymbol => Qty.Unit.Symbol;
+        public object UnderlyingQuantity => Qty;
         public LuaQuantity(Quantity<double> qty, Table mt) { Qty = qty; Metatable = mt; }
         public bool IsFrozen => true;
         public void Freeze(HashSet<object> visited) { }
         public Value TransferTo(LuaState target, Func<Value, Value> copyChild) => Wrap(target, Qty);
+        public bool TryConvertToUnit(string targetUnitExpression, out double value, out string? error)
+        {
+            try
+            {
+                SymbolicUnit target = Bridge.Unit(targetUnitExpression);
+                if (Qty.Unit.Dimension != target.Dimension)
+                {
+                    value = 0;
+                    error = $"incompatible physical dimensions: got {FormatDimensionName(Qty.Unit.Dimension)} ({Qty.Unit.Symbol}), expected {FormatDimensionName(target.Dimension)} ({target.Symbol})";
+                    return false;
+                }
+                value = Qty.In(target).Value;
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                value = 0;
+                error = ex.Message;
+                return false;
+            }
+        }
         public override string ToString() => Bridge.Format(Qty);
     }
 

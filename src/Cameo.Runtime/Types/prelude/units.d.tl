@@ -33,8 +33,8 @@ global record SharpUnits
         metamethod __add: function(Quantity, Quantity): Quantity
         metamethod __sub: function(Quantity, Quantity): Quantity
         metamethod __unm: function(Quantity): Quantity
-        metamethod __mul: function(Quantity, Quantity | number): Quantity
-        metamethod __div: function(Quantity, Quantity | number): Quantity
+        metamethod __mul: function(Quantity | number, Quantity | number): Quantity
+        metamethod __div: function(Quantity | number, Quantity | number): Quantity
         metamethod __lt: function(Quantity, Quantity): boolean
         metamethod __le: function(Quantity, Quantity): boolean
         metamethod __eq: function(Quantity, Quantity): boolean
@@ -60,6 +60,7 @@ global record SharpUnits
         --   Point + Point     -> COMPILE ERROR!
         metamethod __add: function(QuantityPoint, Quantity): QuantityPoint
         metamethod __sub: function(QuantityPoint, QuantityPoint): Quantity
+        metamethod __sub: function(QuantityPoint, Quantity): QuantityPoint
         metamethod __lt: function(QuantityPoint, QuantityPoint): boolean
         metamethod __le: function(QuantityPoint, QuantityPoint): boolean
         metamethod __eq: function(QuantityPoint, QuantityPoint): boolean
@@ -86,8 +87,31 @@ global record SharpUnits
         metamethod __tostring: function(QuantitySeries): string
     end
 
+    -- Named compile-time dimension aliases (all interoperable with Quantity<"unit">)
+    type Resistance = Quantity<"Ohm">
+    type Voltage = Quantity<"V">
+    type Capacitance = Quantity<"F">
+    type Inductance = Quantity<"H">
+    type Current = Quantity<"A">
+    type Conductance = Quantity<"S">
+    type Charge = Quantity<"C">
+    type Power = Quantity<"W">
+    type Energy = Quantity<"J">
+    type Frequency = Quantity<"Hz">
+    type Time = Quantity<"s">
+    type Length = Quantity<"m">
+    type Area = Quantity<"m^2">
+    type Volume = Quantity<"m^3">
+    type Mass = Quantity<"kg">
+    type Force = Quantity<"N">
+    type Pressure = Quantity<"Pa">
+    type Temperature = Quantity<"K">
+    type Velocity = Quantity<"m/s">
+    type Acceleration = Quantity<"m/s^2">
+    type Dimensionless = Quantity<"1">
+
     unit: function(string): SymbolicUnit
-    qty: function(number, string): Quantity
+    qty: function(number, string | SymbolicUnit): Quantity
     parse: function(string): Quantity
     point: function(number, string, ? string): QuantityPoint
     series: function({number}, string, ? string): QuantitySeries

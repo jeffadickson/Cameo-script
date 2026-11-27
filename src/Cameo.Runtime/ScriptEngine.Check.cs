@@ -7,7 +7,20 @@ namespace Cameo.Runtime;
 public sealed partial class ScriptEngine
 {
     private TypeChecker? _checker;
+    private IUnitDimensionResolver? _unitDimensionResolver;
     private readonly List<(string Source, string Name, string? ReplaceGlobal)> _hostDeclarations = new();
+
+    /// <summary>
+    /// Installs a compile-time physical unit dimension resolver (used by <c>Cameo.Units</c> / <c>SharpUnits</c>)
+    /// on this engine's type checker and any child worker engines.
+    /// </summary>
+    public void SetUnitDimensionResolver(IUnitDimensionResolver? resolver)
+    {
+        _unitDimensionResolver = resolver;
+        _checker?.SetUnitDimensionResolver(resolver);
+    }
+
+    internal IUnitDimensionResolver? UnitDimensionResolver => _unitDimensionResolver;
 
     private void InitChecker()
     {
@@ -19,7 +32,7 @@ public sealed partial class ScriptEngine
 
     private TypeChecker CreateChecker()
     {
-        var checker = new TypeChecker(FindModuleSource, _language.UsesTaggedResults);
+        var checker = new TypeChecker(FindModuleSource, _language.UsesTaggedResults, _unitDimensionResolver);
         foreach (var (src, name, replace) in _hostDeclarations)
             checker.AddDeclaration(src, name, replace);
         return checker;
